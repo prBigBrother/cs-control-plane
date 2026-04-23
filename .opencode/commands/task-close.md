@@ -5,5 +5,4 @@ Usage:
 
 Rules:
 - Resolve the worktree path.
-- Summarize durable facts for memory.
 - Run `./bin/cleanup-task <repo> <eng-id> <slug>`.

@@ -94,3 +94,7 @@ Map worktrees:
 - Implementation sessions should run inside a repo worktree.
 - The control plane repo is for shared policy, orchestration, and maintenance.
 - `dinah` participates in migration and audit workflows as read-only. It does not get editable worktrees.
+
+## Agent Guide
+
+See [docs/agents.md](/Users/prbigbrother/Sites/citizenshipper/control-plane/docs/agents.md) for the current shared agents, when to use each one, and how they fit into the multi-session workflow.
