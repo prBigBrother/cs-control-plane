@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-node "$ROOT/.opencode/tools/repo-profile.mjs" "$@"
+node "$ROOT/lib/repo-profile.mjs" "$@"

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: new-release <service> [environment]"
+  echo "  service      daedalus | icarus | odin"
+  echo "  environment  staging | production | both (default)"
+  exit 1
+}
+
+[[ $# -lt 1 || $# -gt 2 ]] && usage
+
+SERVICE=$1
+ENVIRONMENT=${2:-both}
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OPS_PATH="$ROOT/repos/ops"
+WORKTREE_BASE="$ROOT/worktrees/ops"
+VALUES_STAGING="$OPS_PATH/k8s/$SERVICE/values.staging.yaml"
+VALUES_PRODUCTION="$OPS_PATH/k8s/$SERVICE/values.production.yaml"
+
+case "$SERVICE" in
+  daedalus|icarus|odin) ;;
+  *) usage ;;
+esac
+
+case "$ENVIRONMENT" in
+  staging|production)
+    WORKTREE="$WORKTREE_BASE/release-$SERVICE-$ENVIRONMENT-head-image"
+    BRANCH="release/$SERVICE-$ENVIRONMENT-head-image"
+    ;;
+  both)
+    WORKTREE="$WORKTREE_BASE/release-$SERVICE-head-image"
+    BRANCH="release/$SERVICE-head-image"
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+if [ ! -e "$OPS_PATH/.git" ]; then
+  echo "Repo not initialized: $OPS_PATH" >&2
+  exit 1
+fi
+
+for values_file in "$VALUES_STAGING" "$VALUES_PRODUCTION"; do
+  if [ ! -f "$values_file" ]; then
+    echo "Missing values file: $values_file" >&2
+    exit 1
+  fi
+done
+
+read_current_sha() {
+  local values_file=$1
+  grep -E '^[[:space:]]+tag:' "$values_file" | head -1 | awk '{print $2}' | tr -d '\r'
+}
+
+CURRENT_STAGING_SHA=$(read_current_sha "$VALUES_STAGING")
+CURRENT_PRODUCTION_SHA=$(read_current_sha "$VALUES_PRODUCTION")
+
+mkdir -p "$WORKTREE_BASE"
+git -C "$OPS_PATH" fetch origin
+
+if [ -d "$WORKTREE" ]; then
+  git -C "$OPS_PATH" worktree remove "$WORKTREE" --force 2>/dev/null || true
+fi
+
+if git -C "$OPS_PATH" branch --list "$BRANCH" | grep -q .; then
+  git -C "$OPS_PATH" branch -D "$BRANCH" 2>/dev/null || true
+fi
+
+git -C "$OPS_PATH" worktree add -b "$BRANCH" "$WORKTREE" origin/main
+"$ROOT/bin/install-local-opencode" "$WORKTREE"
+
+echo "Ready: $WORKTREE"
+echo "Branch: $BRANCH"
+echo "Environment: $ENVIRONMENT"
+echo "Current staging: $CURRENT_STAGING_SHA"
+echo "Current production: $CURRENT_PRODUCTION_SHA"

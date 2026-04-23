@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: release-pr-body <service> <new-sha> [environment] [old-sha]"
+  echo "  service      daedalus | icarus | odin"
+  echo "  new-sha      new full SHA to release"
+  echo "  environment  staging | production | both (default)"
+  echo "  old-sha      optional currently deployed SHA for single-environment releases"
+  exit 1
+}
+
+[[ $# -lt 2 ]] && usage
+
+SERVICE=$1
+NEW_SHA=$2
+ENVIRONMENT=both
+OLD_SHA=${4:-}
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_PATH="$ROOT/repos/$SERVICE"
+OPS_PATH="$ROOT/repos/ops"
+VALUES_STAGING="$OPS_PATH/k8s/$SERVICE/values.staging.yaml"
+VALUES_PRODUCTION="$OPS_PATH/k8s/$SERVICE/values.production.yaml"
+
+case "$SERVICE" in
+  daedalus|icarus|odin) ;;
+  *) usage ;;
+esac
+
+if [[ $# -ge 3 ]]; then
+  case "$3" in
+    staging|production|both)
+      ENVIRONMENT=$3
+      ;;
+    *)
+      ENVIRONMENT=staging
+      OLD_SHA=$3
+      ;;
+  esac
+fi
+
+if [[ $# -ge 4 && "$ENVIRONMENT" == "both" ]]; then
+  echo "Error: explicit old-sha is only supported for single-environment releases" >&2
+  exit 1
+fi
+
+if [ ! -e "$REPO_PATH/.git" ] || [ ! -e "$OPS_PATH/.git" ]; then
+  echo "Required repos are not initialized under repos/" >&2
+  exit 1
+fi
+
+read_current_sha() {
+  local values_file=$1
+  grep -E '^[[:space:]]+tag:' "$values_file" | head -1 | awk '{print $2}' | tr -d '\r'
+}
+
+build_commits() {
+  local old_sha=$1
+  git -C "$REPO_PATH" log --format='- `%h` %s' "${old_sha}..${NEW_SHA}"
+}
+
+validate_sha() {
+  local label=$1
+  local sha=$2
+  if ! git -C "$REPO_PATH" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+    echo "Error: $label SHA '$sha' not found in $SERVICE" >&2
+    exit 1
+  fi
+}
+
+STAGING_OLD_SHA=$(read_current_sha "$VALUES_STAGING")
+PRODUCTION_OLD_SHA=$(read_current_sha "$VALUES_PRODUCTION")
+
+if [[ "$ENVIRONMENT" == "staging" || "$ENVIRONMENT" == "production" ]]; then
+  if [[ -z "$OLD_SHA" ]]; then
+    if [[ "$ENVIRONMENT" == "staging" ]]; then
+      OLD_SHA=$STAGING_OLD_SHA
+    else
+      OLD_SHA=$PRODUCTION_OLD_SHA
+    fi
+  fi
+fi
+
+validate_sha "new" "$NEW_SHA"
+
+NEW_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$NEW_SHA")
+PR_TITLE=$(git -C "$REPO_PATH" log -1 --format="%s" "$NEW_SHA")
+STAGING_FILE="k8s/$SERVICE/values.staging.yaml"
+PRODUCTION_FILE="k8s/$SERVICE/values.production.yaml"
+
+echo "=== PR TITLE ==="
+echo "$PR_TITLE"
+echo ""
+echo "=== PR BODY ==="
+
+if [[ "$ENVIRONMENT" == "staging" ]]; then
+  validate_sha "old" "$OLD_SHA"
+  OLD_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$OLD_SHA")
+  COMMITS=$(build_commits "$OLD_SHA")
+  cat <<EOF
+## Release: $SERVICE (staging only)
+
+| | SHA |
+|---|---|
+| Old (staging) | \`$OLD_SHA\` |
+| New (staging) | \`$NEW_SHA\` |
+
+**Staging image tag:** \`$OLD_SHORT\` → \`$NEW_SHORT\`
+
+## Commits ($OLD_SHORT...$NEW_SHORT)
+
+$COMMITS
+
+## Changed Files
+
+- \`$STAGING_FILE\`
+EOF
+elif [[ "$ENVIRONMENT" == "production" ]]; then
+  validate_sha "old" "$OLD_SHA"
+  OLD_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$OLD_SHA")
+  COMMITS=$(build_commits "$OLD_SHA")
+  cat <<EOF
+## Release: $SERVICE (production only)
+
+| | SHA |
+|---|---|
+| Old (production) | \`$OLD_SHA\` |
+| New (production) | \`$NEW_SHA\` |
+
+**Production image tag:** \`$OLD_SHORT\` → \`$NEW_SHORT\`
+
+## Commits ($OLD_SHORT...$NEW_SHORT)
+
+$COMMITS
+
+## Changed Files
+
+- \`$PRODUCTION_FILE\`
+EOF
+else
+  validate_sha "staging old" "$STAGING_OLD_SHA"
+  validate_sha "production old" "$PRODUCTION_OLD_SHA"
+  STAGING_OLD_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$STAGING_OLD_SHA")
+  PRODUCTION_OLD_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$PRODUCTION_OLD_SHA")
+  STAGING_COMMITS=$(build_commits "$STAGING_OLD_SHA")
+
+  if [[ "$STAGING_OLD_SHA" == "$PRODUCTION_OLD_SHA" ]]; then
+    cat <<EOF
+## Release: $SERVICE
+
+| | SHA |
+|---|---|
+| Old (staging) | \`$STAGING_OLD_SHA\` |
+| New (staging) | \`$NEW_SHA\` |
+| Old (production) | \`$PRODUCTION_OLD_SHA\` |
+| New (production) | \`$NEW_SHA\` |
+
+**Staging image tag:** \`$STAGING_OLD_SHORT\` → \`$NEW_SHORT\`
+**Production image tag:** \`$PRODUCTION_OLD_SHORT\` → \`$NEW_SHORT\`
+
+## Commits ($STAGING_OLD_SHORT...$NEW_SHORT)
+
+$STAGING_COMMITS
+
+## Changed Files
+
+- \`$STAGING_FILE\`
+- \`$PRODUCTION_FILE\`
+EOF
+  else
+    PRODUCTION_COMMITS=$(build_commits "$PRODUCTION_OLD_SHA")
+    cat <<EOF
+## Release: $SERVICE
+
+| | SHA |
+|---|---|
+| Old (staging) | \`$STAGING_OLD_SHA\` |
+| New (staging) | \`$NEW_SHA\` |
+| Old (production) | \`$PRODUCTION_OLD_SHA\` |
+| New (production) | \`$NEW_SHA\` |
+
+**Staging image tag:** \`$STAGING_OLD_SHORT\` → \`$NEW_SHORT\`
+**Production image tag:** \`$PRODUCTION_OLD_SHORT\` → \`$NEW_SHORT\`
+
+## Staging Commits ($STAGING_OLD_SHORT...$NEW_SHORT)
+
+$STAGING_COMMITS
+
+## Production Commits ($PRODUCTION_OLD_SHORT...$NEW_SHORT)
+
+$PRODUCTION_COMMITS
+
+## Changed Files
+
+- \`$STAGING_FILE\`
+- \`$PRODUCTION_FILE\`
+EOF
+  fi
+fi

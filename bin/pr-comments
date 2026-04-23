@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: pr-comments <repo> <pr-number>"
+  echo "  repo       format: owner/repo or just repo (assumes citizenshipper)"
+  echo "  pr-number  pull request number"
+  exit 1
+}
+
+[[ $# -ne 2 ]] && usage
+
+REPO_INPUT=$1
+PR_NUMBER=$2
+
+if [[ "$REPO_INPUT" == */* ]]; then
+  REPO="$REPO_INPUT"
+else
+  REPO="citizenshipper/$REPO_INPUT"
+fi
+
+if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+  usage
+fi
+
+for cmd in gh jq; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  fi
+done
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "GitHub CLI is not authenticated" >&2
+  exit 1
+fi
+
+echo "PR: $REPO#$PR_NUMBER"
+echo ""
+
+PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number,title,state,author,createdAt,body 2>/dev/null) || {
+  echo "Error: Could not fetch PR $REPO#$PR_NUMBER" >&2
+  exit 1
+}
+
+echo "Title: $(echo "$PR_INFO" | jq -r '.title // "Unknown"')"
+echo "State: $(echo "$PR_INFO" | jq -r '.state // "unknown"')"
+echo "Author: $(echo "$PR_INFO" | jq -r '.author.login // "unknown"')"
+echo ""
+
+echo "=== PR Description ==="
+gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq '.body' 2>/dev/null | head -100 || echo "(no description)"
+echo ""
+
+echo "=== PR Comments ==="
+COMMENTS=$(gh api "/repos/$REPO/issues/$PR_NUMBER/comments" --paginate 2>/dev/null) || true
+if [[ -n "$COMMENTS" && "$COMMENTS" != "[]" ]]; then
+  echo "$COMMENTS" | jq -r '.[] | "[@\(.user.login)] \(.created_at | split("T")[0]):\n\(.body)\n---"'
+else
+  echo "(no PR comments)"
+fi
+echo ""
+
+echo "=== Review Comments / Threads ==="
+REVIEWS=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate 2>/dev/null) || true
+REVIEW_COMMENTS=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/comments" --paginate 2>/dev/null) || true
+
+if [[ -n "$REVIEWS" && "$REVIEWS" != "[]" ]]; then
+  echo "Reviews:"
+  echo "$REVIEWS" | jq -r '.[] | select(.body != "") | "[@\(.user.login) - \(.state)] \(.submitted_at | split("T")[0]):\n\(.body)\n---"' || true
+fi
+
+if [[ -n "$REVIEW_COMMENTS" && "$REVIEW_COMMENTS" != "[]" ]]; then
+  echo ""
+  echo "Code Review Comments:"
+  echo "$REVIEW_COMMENTS" | jq -r '.[] | "[@\(.user.login) on \(.path):\(.line // "?")] \(.created_at | split("T")[0]):\n\(.body)\n---"'
+else
+  if [[ -z "$REVIEWS" || "$REVIEWS" == "[]" ]]; then
+    echo "(no review comments)"
+  fi
+fi

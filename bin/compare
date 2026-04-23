@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: compare <service> <environment> [target-sha]"
+  echo "  service      daedalus | icarus | odin"
+  echo "  environment  staging | production | prod"
+  echo "  target-sha   optional full or partial commit SHA to compare against"
+  exit 1
+}
+
+[[ $# -lt 2 || $# -gt 3 ]] && usage
+
+SERVICE=$1
+ENVIRONMENT=$2
+TARGET_SHA_INPUT=${3:-}
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_PATH="$ROOT/repos/$SERVICE"
+OPS_PATH="$ROOT/repos/ops"
+
+case "$SERVICE" in
+  daedalus|icarus|odin) ;;
+  *) usage ;;
+esac
+
+case "$ENVIRONMENT" in
+  staging) VALUES_ENV=staging ;;
+  production|prod) VALUES_ENV=production ;;
+  *) usage ;;
+esac
+
+VALUES_FILE="k8s/$SERVICE/values.$VALUES_ENV.yaml"
+
+if [ ! -e "$REPO_PATH/.git" ] || [ ! -e "$OPS_PATH/.git" ]; then
+  echo "Required repos are not initialized under repos/" >&2
+  exit 1
+fi
+
+git -C "$REPO_PATH" fetch origin >/dev/null
+git -C "$OPS_PATH" fetch origin >/dev/null
+
+if ! git -C "$OPS_PATH" show "origin/main:$VALUES_FILE" >/dev/null 2>&1; then
+  echo "Error: $VALUES_FILE not found on ops origin/main" >&2
+  exit 1
+fi
+
+DEPLOYED_SHA=$(git -C "$OPS_PATH" show "origin/main:$VALUES_FILE" | grep -E '^[[:space:]]+tag:' | head -1 | awk '{print $2}' | tr -d '\r')
+
+if [ -z "$DEPLOYED_SHA" ]; then
+  echo "Error: could not read deployed SHA from ops origin/main:$VALUES_FILE" >&2
+  exit 1
+fi
+
+if ! git -C "$REPO_PATH" cat-file -e "${DEPLOYED_SHA}^{commit}" 2>/dev/null; then
+  echo "Error: deployed SHA '$DEPLOYED_SHA' not found in $SERVICE" >&2
+  exit 1
+fi
+
+if [ -n "$TARGET_SHA_INPUT" ]; then
+  if ! git -C "$REPO_PATH" cat-file -e "${TARGET_SHA_INPUT}^{commit}" 2>/dev/null; then
+    echo "Error: target SHA '$TARGET_SHA_INPUT' not found in $SERVICE" >&2
+    exit 1
+  fi
+
+  TARGET_SHA=$(git -C "$REPO_PATH" rev-parse "$TARGET_SHA_INPUT")
+  TARGET_LABEL="Target"
+else
+  TARGET_SHA=$(git -C "$REPO_PATH" rev-parse origin/main)
+  TARGET_LABEL="origin/main"
+fi
+
+DEPLOYED_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$DEPLOYED_SHA")
+TARGET_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$TARGET_SHA")
+
+echo "Service:      $SERVICE"
+echo "Environment:  $VALUES_ENV"
+echo "Deployed:     $DEPLOYED_SHA"
+echo "$TARGET_LABEL:         $TARGET_SHA"
+echo ""
+
+if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ]; then
+  echo "No commits between deployed $DEPLOYED_SHORT and $TARGET_LABEL $TARGET_SHORT."
+  exit 0
+fi
+
+echo "Commits ($DEPLOYED_SHORT..$TARGET_SHORT):"
+git -C "$REPO_PATH" log --format='- `%h` %s (%an <%ae>)' "${DEPLOYED_SHA}..${TARGET_SHA}"
