@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -lt 3 ]; then
+  echo "Usage: cleanup-task <repo> <eng-id> <slug> [type]" >&2
+  exit 1
+fi
+
+REPO="$1"
+ENG_ID="$2"
+SLUG="$3"
+TYPE="${4:-feature}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_PATH="$ROOT/repos/$REPO"
+WORKTREE_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
+BRANCH="$TYPE/$ENG_ID/$SLUG"
+
+if [ ! -e "$REPO_PATH/.git" ]; then
+  echo "Repo not initialized: $REPO_PATH" >&2
+  exit 3
+fi
+
+if [ -d "$WORKTREE_PATH" ]; then
+  git -C "$REPO_PATH" worktree remove "$WORKTREE_PATH"
+fi
+
+git -C "$REPO_PATH" branch -D "$BRANCH" || true
+git -C "$REPO_PATH" worktree prune

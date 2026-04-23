@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+mkdir -p repos
+
+declare -a REPOS=(
+  "git@github.com:citizenshipper/icarus.git repos/icarus"
+  "git@github.com:citizenshipper/daedalus.git repos/daedalus"
+  "git@github.com:citizenshipper/ops.git repos/ops"
+  "git@github.com:citizenshipper/olympus.git repos/olympus"
+  "git@github.com:citizenshipper/odin.git repos/odin"
+  "git@github.com:citizenshipper/dinah.git repos/dinah"
+)
+
+for entry in "${REPOS[@]}"; do
+  remote="${entry%% *}"
+  path="${entry##* }"
+
+  if [ -e "$path/.git" ] || git config --file .gitmodules --get-regexp "submodule\\.$path\\.path" >/dev/null 2>&1; then
+    echo "Skipping existing submodule: $path"
+    continue
+  fi
+
+  git submodule add "$remote" "$path"
+done

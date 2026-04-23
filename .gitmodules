@@ -1,0 +1,18 @@
+[submodule "repos/icarus"]
+	path = repos/icarus
+	url = git@github.com:citizenshipper/icarus.git
+[submodule "repos/daedalus"]
+	path = repos/daedalus
+	url = git@github.com:citizenshipper/daedalus.git
+[submodule "repos/ops"]
+	path = repos/ops
+	url = git@github.com:citizenshipper/ops.git
+[submodule "repos/olympus"]
+	path = repos/olympus
+	url = git@github.com:citizenshipper/olympus.git
+[submodule "repos/odin"]
+	path = repos/odin
+	url = git@github.com:citizenshipper/odin.git
+[submodule "repos/dinah"]
+	path = repos/dinah
+	url = git@github.com:citizenshipper/dinah.git

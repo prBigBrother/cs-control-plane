@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -lt 3 ]; then
+  echo "Usage: new-task <repo> <eng-id> <slug> [type]" >&2
+  exit 1
+fi
+
+REPO="$1"
+ENG_ID="$2"
+SLUG="$3"
+TYPE="${4:-feature}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_PATH="$ROOT/repos/$REPO"
+WORKTREE_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
+BRANCH="$TYPE/$ENG_ID/$SLUG"
+
+if [ "$REPO" = "dinah" ]; then
+  echo "dinah is read-only in this control plane" >&2
+  exit 2
+fi
+
+if [ ! -e "$REPO_PATH/.git" ]; then
+  echo "Repo not initialized: $REPO_PATH" >&2
+  exit 3
+fi
+
+mkdir -p "$ROOT/worktrees/$REPO"
+git -C "$REPO_PATH" fetch origin
+git -C "$REPO_PATH" checkout main
+git -C "$REPO_PATH" pull --ff-only origin main
+
+if [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH" ]; then
+  echo "$WORKTREE_PATH"
+  exit 0
+fi
+
+git -C "$REPO_PATH" worktree add -b "$BRANCH" "$WORKTREE_PATH" main
+
+if [ -f "$REPO_PATH/AGENTS.md" ]; then
+  cp "$REPO_PATH/AGENTS.md" "$WORKTREE_PATH/AGENTS.md"
+fi
+
+"$ROOT/bin/install-local-opencode" "$WORKTREE_PATH"
+
+echo "$WORKTREE_PATH"

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -ne 1 ]; then
+  echo "Usage: install-local-opencode <repo-or-worktree-path>" >&2
+  exit 1
+fi
+
+TARGET_INPUT="$1"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+case "$TARGET_INPUT" in
+  /*) TARGET="$TARGET_INPUT" ;;
+  *) TARGET="$ROOT/$TARGET_INPUT" ;;
+esac
+
+if [ ! -d "$TARGET" ]; then
+  echo "Target directory not found: $TARGET" >&2
+  exit 2
+fi
+
+GIT_DIR="$(git -C "$TARGET" rev-parse --git-dir 2>/dev/null || true)"
+if [ -z "$GIT_DIR" ]; then
+  echo "Target is not a git worktree: $TARGET" >&2
+  exit 3
+fi
+
+case "$GIT_DIR" in
+  /*) ;;
+  *) GIT_DIR="$TARGET/$GIT_DIR" ;;
+esac
+
+mkdir -p "$GIT_DIR/info"
+touch "$GIT_DIR/info/exclude"
+
+for entry in "/opencode.json" "/.opencode"; do
+  if ! grep -qxF "$entry" "$GIT_DIR/info/exclude"; then
+    printf "%s\n" "$entry" >> "$GIT_DIR/info/exclude"
+  fi
+done
+
+ln -sfn "$ROOT/opencode.json" "$TARGET/opencode.json"
+ln -sfn "$ROOT/.opencode" "$TARGET/.opencode"
+
+echo "Installed shared OpenCode config into $TARGET"
