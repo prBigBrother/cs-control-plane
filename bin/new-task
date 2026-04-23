@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+link_if_missing() {
+  local source_path="$1"
+  local target_path="$2"
+
+  if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_path")"
+  ln -s "$source_path" "$target_path"
+}
+
+link_globbed_env_files() {
+  local source_dir="$1"
+  local target_dir="$2"
+
+  for env_file in "$source_dir"/.env*; do
+    [ -f "$env_file" ] || continue
+    link_if_missing "$env_file" "$target_dir/$(basename "$env_file")"
+  done
+}
+
 if [ "$#" -lt 3 ]; then
   echo "Usage: new-task <repo> <eng-id> <slug> [type]" >&2
   exit 1
@@ -40,6 +62,29 @@ git -C "$REPO_PATH" worktree add -b "$BRANCH" "$WORKTREE_PATH" main
 if [ -f "$REPO_PATH/AGENTS.md" ]; then
   cp "$REPO_PATH/AGENTS.md" "$WORKTREE_PATH/AGENTS.md"
 fi
+
+# Link root node_modules when present in the base checkout.
+if [ -f "$REPO_PATH/package.json" ] && [ -d "$REPO_PATH/node_modules" ]; then
+  link_if_missing "$REPO_PATH/node_modules" "$WORKTREE_PATH/node_modules"
+fi
+
+# Link package node_modules and env files for workspace-style repos.
+if [ -d "$REPO_PATH/packages" ]; then
+  while IFS= read -r package_json; do
+    package_dir="$(dirname "$package_json")"
+    relative_dir="${package_dir#"$REPO_PATH"/}"
+    target_dir="$WORKTREE_PATH/$relative_dir"
+
+    if [ -d "$package_dir/node_modules" ]; then
+      link_if_missing "$package_dir/node_modules" "$target_dir/node_modules"
+    fi
+
+    link_globbed_env_files "$package_dir" "$target_dir"
+  done < <(find "$REPO_PATH/packages" -mindepth 2 -maxdepth 4 -name package.json | sort)
+fi
+
+# Link repo-level env files such as .env and .env.local.
+link_globbed_env_files "$REPO_PATH" "$WORKTREE_PATH"
 
 "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH"
 

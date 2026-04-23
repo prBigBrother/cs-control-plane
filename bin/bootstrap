@@ -6,4 +6,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/repos" "$ROOT/worktrees"
 touch "$ROOT/worktrees/.gitkeep"
 
+install_repo_dependencies() {
+  local repo_name="$1"
+  local repo_path="$ROOT/repos/$repo_name"
+
+  if [ ! -f "$repo_path/package.json" ] || [ ! -f "$repo_path/package-lock.json" ]; then
+    return 0
+  fi
+
+  echo "Installing dependencies in $repo_name..."
+  npm -C "$repo_path" ci
+}
+
 echo "Initialized control-plane directories at $ROOT"
+
+for repo in icarus daedalus olympus odin dinah; do
+  if [ -d "$ROOT/repos/$repo/.git" ] || [ -f "$ROOT/repos/$repo/.git" ]; then
+    install_repo_dependencies "$repo"
+  fi
+done

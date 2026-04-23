@@ -39,7 +39,10 @@ Initialize submodules:
 
 ```bash
 ./bin/add-submodules
+./bin/bootstrap
 ```
+
+`bin/bootstrap` initializes the control-plane directories and runs `npm ci` in the Node repos that have a `package-lock.json` (`icarus`, `daedalus`, `olympus`, `odin`, and `dinah`). It skips `ops`.
 
 Create worktrees:
 
@@ -47,6 +50,14 @@ Create worktrees:
 ./bin/new-task icarus ENG-123 checkout-redesign feature
 ./bin/new-task daedalus ENG-123 checkout-redesign feature
 ```
+
+`bin/new-task` also links local runtime assets from the base repo into the new worktree when they exist:
+- repo-root `node_modules`
+- `packages/**/node_modules`
+- repo-root `.env*` files such as `.env` and `.env.local`
+- `packages/**/.env*` files such as `.env` and `.env.local`
+
+Tracked env files already present in the worktree are left as-is; untracked local env files are symlinked from the base repo checkout.
 
 Attach shared OpenCode config to a base repo or worktree:
 

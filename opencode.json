@@ -2,6 +2,40 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "openai/gpt-5.4",
   "small_model": "openai/gpt-5.4-mini",
+  "mcp": {
+    "composio": {
+      "type": "remote",
+      "url": "https://connect.composio.dev/mcp",
+      "enabled": true
+    },
+    "figma": {
+      "type": "remote",
+      "url": "https://mcp.figma.com/mcp",
+      "enabled": true,
+      "oauth": {}
+    },
+    "slack": {
+      "type": "remote",
+      "url": "https://mcp.slack.com/mcp",
+      "enabled": true,
+      "oauth": {
+        "clientId": "3660753192626.8903469228982"
+      }
+    },
+    "tavily": {
+      "type": "remote",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey={env:TAVILY_API_KEY}",
+      "enabled": true
+    },
+    "storyblok": {
+      "type": "remote",
+      "url": "https://mcp.labs.storyblok.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:STORYBLOK_MCP_TOKEN}"
+      }
+    }
+  },
   "instructions": [
     "/Users/prbigbrother/Sites/citizenshipper/control-plane/instructions/shared.md",
     "/Users/prbigbrother/Sites/citizenshipper/control-plane/instructions/engineering.md",
