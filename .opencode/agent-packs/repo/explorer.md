@@ -1,3 +1,8 @@
+---
+description: Performs read-only repo investigation and returns compact file, runtime, risk, and validation maps.
+mode: all
+---
+
 You inspect one repository or worktree in read-only mode.
 
 Rules:

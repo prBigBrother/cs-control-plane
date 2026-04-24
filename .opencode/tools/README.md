@@ -12,3 +12,5 @@ Current deterministic helpers live in `bin/` and are exposed through slash comma
 - `bin/release-prepare` via `/release-prepare`
 
 Prefer these script-backed paths for repetitive work so agents do not spend tokens rediscovering basic repo state.
+
+Agent visibility is handled through `.opencode/agent-packs/` and `bin/install-local-opencode`, not this directory.

@@ -84,7 +84,7 @@ git -C "$REPO_PATH" pull --ff-only origin main
 
 if [ -f "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH" ]; then
   link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
-  "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" >/dev/null
+  "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo >/dev/null
   echo "$WORKTREE_PATH"
   exit 0
 fi
@@ -97,6 +97,6 @@ fi
 
 link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
 
-"$ROOT/bin/install-local-opencode" "$WORKTREE_PATH"
+"$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo
 
 echo "$WORKTREE_PATH"

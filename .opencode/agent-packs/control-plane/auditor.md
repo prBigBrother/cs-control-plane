@@ -1,3 +1,8 @@
+---
+description: Audits migration boundaries, Dinah dependencies, rollout risks, and cleanup candidates.
+mode: all
+---
+
 You analyze migration boundaries between `dinah` and target repositories.
 
 Rules:

@@ -9,6 +9,8 @@ This guide describes the standard engineering cycle from task intake through rel
 - Use one editing owner per repo worktree.
 - Use subagents when work can run independently by repo or phase.
 - Use script-backed commands directly when the task is deterministic.
+- Control-plane sessions show Manager, Auditor, and Release.
+- Repo worktree sessions show Explorer, Implementer, and Validator.
 
 ## 1. Intake And Scope
 
@@ -16,8 +18,8 @@ Session:
 - control plane
 
 Use:
-- `orchestrator` for cross-repo tasks
-- `migration-auditor` for migration or legacy cutoff tasks
+- `manager` for cross-repo tasks
+- `auditor` for migration or legacy cutoff tasks
 - no agent for simple single-repo tasks with obvious scope
 
 Commands:
@@ -57,6 +59,7 @@ Equivalent script:
 Output:
 - one worktree per editable repo under `worktrees/<repo>/ENG-<id>-<slug>/`
 - shared OpenCode config installed
+- repo agent pack installed for Tab switching
 - repo-local `AGENTS.md` copied when present
 
 Rules:
@@ -70,8 +73,8 @@ Session:
 - repo worktree
 
 Use:
-- `repo-explorer` when the edit scope is unclear
-- one `repo-explorer` per repo in parallel for independent repo investigations
+- `explorer` when the edit scope is unclear
+- one `explorer` per repo in parallel for independent repo investigations
 - `/session-brief` before handoff when a compact state summary helps
 
 Commands:
@@ -96,7 +99,7 @@ Session:
 - repo worktree
 
 Use:
-- `repo-implementer` once scope is clear
+- `implementer` once scope is clear
 - one implementer per editable repo worktree
 
 Commands:
@@ -121,7 +124,7 @@ Session:
 - repo worktree
 
 Use:
-- `repo-validator` for validation-only work
+- `validator` for validation-only work
 - one validator per changed repo when validation can run in parallel
 
 Commands:
@@ -137,7 +140,7 @@ Output:
 Rules:
 - Match validation depth to changed surface.
 - Keep full logs out of the parent context unless they explain a failure.
-- If validation fails, send the failure back to the repo implementer for fixes.
+- If validation fails, send the failure back to the implementer for fixes.
 
 ## 6. Commit
 
@@ -146,7 +149,7 @@ Session:
 
 Use:
 - no agent for straightforward commits
-- `repo-implementer` if final cleanup or validation fixes are still needed
+- `implementer` if final cleanup or validation fixes are still needed
 
 Commands:
 - repo-local `git status`
@@ -170,7 +173,7 @@ Session:
 
 Use:
 - no agent for straightforward PR creation
-- `orchestrator` only when multiple repo PRs need sequencing or dependency notes
+- `manager` only when multiple repo PRs need sequencing or dependency notes
 
 Commands:
 - `/pr-create [draft|ready]` from the repo worktree
@@ -199,9 +202,9 @@ Session:
 
 Use:
 - `/pr-comments <repo> <pr-number>` to gather review context
-- `repo-explorer` if a comment requires investigation
-- `repo-implementer` for code fixes
-- `repo-validator` after fixes
+- `explorer` if a comment requires investigation
+- `implementer` for code fixes
+- `validator` after fixes
 
 Commands:
 - `/pr-comments <repo> <pr-number>`
@@ -226,7 +229,7 @@ Session:
 
 Use:
 - no agent unless merge readiness needs cross-repo coordination
-- `orchestrator` when multiple PRs must merge in a specific order
+- `manager` when multiple PRs must merge in a specific order
 
 Pre-merge checklist:
 - required checks pass
@@ -236,7 +239,7 @@ Pre-merge checklist:
 
 Rules:
 - Merge app PRs before preparing the `ops` release.
-- For cross-repo work, merge according to the dependency order from the orchestrator.
+- For cross-repo work, merge according to the dependency order from the manager.
 - Do not prepare a release from an unmerged feature branch unless explicitly requested.
 
 ## 10. Release Preparation For Ops
@@ -245,7 +248,7 @@ Session:
 - control plane
 
 Use:
-- `release-manager`
+- `release`
 
 Commands:
 - `/compare <service> <environment> [target-sha]`
@@ -281,8 +284,8 @@ Session:
 
 Use:
 - `/pr-comments ops <pr-number>` for review feedback
-- `release-manager` for release-specific fixes
-- `repo-validator` only if validation is needed inside the `ops` worktree
+- `release` for release-specific fixes
+- `validator` only if validation is needed inside the `ops` worktree
 
 Rules:
 - Keep release PRs limited to values/tag updates and required release metadata.
@@ -309,9 +312,9 @@ Rules:
 
 1. Control plane: `/cross-impl` or decide single repo.
 2. Control plane: `/task-start`.
-3. Repo worktree: `/session-brief`, then `repo-explorer` if needed.
-4. Repo worktree: `repo-implementer`.
-5. Repo worktree: `repo-validator`.
+3. Repo worktree: `/session-brief`, then `explorer` if needed.
+4. Repo worktree: `implementer`.
+5. Repo worktree: `validator`.
 6. Repo worktree: commit, then `/pr-create`.
 7. Either session: `/pr-comments`.
 8. Repo worktree: fix review comments, validate, push.

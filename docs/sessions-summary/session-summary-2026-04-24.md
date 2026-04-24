@@ -4,7 +4,7 @@ This session reviewed and improved the control-plane OpenCode configuration with
 
 ## Main Changes
 
-- Converted simple script-backed slash commands to fast paths instead of routing them through the orchestrator:
+- Converted simple script-backed slash commands to fast paths instead of routing them through the manager:
   - `/compare`
   - `/task-start`
   - `/task-map`
@@ -15,12 +15,12 @@ This session reviewed and improved the control-plane OpenCode configuration with
   - `/migration-audit`
   - `/release-prepare`
 - Expanded agent contracts with explicit output formats and delegation rules:
-  - `orchestrator`
-  - `repo-explorer`
-  - `repo-implementer`
-  - `migration-auditor`
-  - `release-manager`
-- Added a new `repo-validator` agent for validation-only work without edits.
+  - `manager`
+  - `explorer`
+  - `implementer`
+  - `auditor`
+  - `release`
+- Added a new `validator` agent for validation-only work without edits.
 - Added `/session-brief` and `bin/session-brief` to provide compact repo/worktree handoffs.
 
 ## OpenCode Profiles

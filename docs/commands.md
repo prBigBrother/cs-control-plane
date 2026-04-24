@@ -74,6 +74,7 @@ Typical output:
 
 Important behavior:
 - rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and `node_modules` links when source assets exist in the base checkout
+- worktrees receive the repo agent set: Explorer, Implementer, and Validator
 - if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
 
 ### `/task-map`
@@ -226,7 +227,7 @@ Purpose:
 - avoid repeated broad discovery by repo-scoped agents
 
 Use it when:
-- a parent session is about to spawn repo explorers, implementers, or validators
+- a parent session is about to spawn explorers, implementers, or validators
 - you need path, branch, dirty state, package scripts, and local instruction presence
 
 Backed by:

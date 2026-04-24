@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
-  echo "Usage: install-local-opencode <repo-or-worktree-path> [engineering|migration|release|external|full]" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
+  echo "Usage: install-local-opencode <repo-or-worktree-path> [engineering|migration|release|external|full] [repo|control-plane|full]" >&2
   exit 1
 fi
 
 TARGET_INPUT="$1"
 PROFILE="${2:-engineering}"
+AGENT_PROFILE="${3:-repo}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$PROFILE" in
@@ -23,6 +24,15 @@ case "$PROFILE" in
     ;;
 esac
 
+case "$AGENT_PROFILE" in
+  repo|control-plane|full) ;;
+  *)
+    echo "Unknown OpenCode agent profile: $AGENT_PROFILE" >&2
+    echo "Expected one of: repo, control-plane, full" >&2
+    exit 5
+    ;;
+esac
+
 case "$TARGET_INPUT" in
   /*) TARGET="$TARGET_INPUT" ;;
   *) TARGET="$ROOT/$TARGET_INPUT" ;;
@@ -32,6 +42,8 @@ if [ ! -d "$TARGET" ]; then
   echo "Target directory not found: $TARGET" >&2
   exit 2
 fi
+
+TARGET="$(cd "$TARGET" && pwd)"
 
 GIT_DIR="$(git -C "$TARGET" rev-parse --git-dir 2>/dev/null || true)"
 if [ -z "$GIT_DIR" ]; then
@@ -44,16 +56,59 @@ case "$GIT_DIR" in
   *) GIT_DIR="$TARGET/$GIT_DIR" ;;
 esac
 
-mkdir -p "$GIT_DIR/info"
-touch "$GIT_DIR/info/exclude"
+if mkdir -p "$GIT_DIR/info" 2>/dev/null && touch "$GIT_DIR/info/exclude" 2>/dev/null; then
+  for entry in "/opencode.json" "/.opencode"; do
+    if ! grep -qxF "$entry" "$GIT_DIR/info/exclude"; then
+      printf "%s\n" "$entry" >> "$GIT_DIR/info/exclude"
+    fi
+  done
+else
+  echo "Warning: could not update $GIT_DIR/info/exclude; continuing with OpenCode install." >&2
+fi
 
-for entry in "/opencode.json" "/.opencode"; do
-  if ! grep -qxF "$entry" "$GIT_DIR/info/exclude"; then
-    printf "%s\n" "$entry" >> "$GIT_DIR/info/exclude"
+install_agent_pack() {
+  local pack_name="$1"
+  local pack_dir="$ROOT/.opencode/agent-packs/$pack_name"
+
+  if [ ! -d "$pack_dir" ]; then
+    return 0
   fi
-done
 
-ln -sfn "$CONFIG" "$TARGET/opencode.json"
-ln -sfn "$ROOT/.opencode" "$TARGET/.opencode"
+  while IFS= read -r agent_file; do
+    [ -n "$agent_file" ] || continue
+    ln -sfn "$agent_file" "$TARGET/.opencode/agents/$(basename "$agent_file")"
+  done < <(find "$pack_dir" -maxdepth 1 -type f -name '*.md' | sort)
+}
 
-echo "Installed shared OpenCode $PROFILE config into $TARGET"
+if [ "$CONFIG" != "$TARGET/opencode.json" ]; then
+  ln -sfn "$CONFIG" "$TARGET/opencode.json"
+fi
+
+if [ -L "$TARGET/.opencode" ]; then
+  rm "$TARGET/.opencode"
+fi
+
+mkdir -p "$TARGET/.opencode/agents"
+
+if [ "$TARGET" != "$ROOT" ]; then
+  ln -sfn "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
+  ln -sfn "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
+fi
+
+find "$TARGET/.opencode/agents" -maxdepth 1 \( -type l -o -type f \) -name '*.md' -delete
+install_agent_pack common
+
+case "$AGENT_PROFILE" in
+  repo)
+    install_agent_pack repo
+    ;;
+  control-plane)
+    install_agent_pack control-plane
+    ;;
+  full)
+    install_agent_pack control-plane
+    install_agent_pack repo
+    ;;
+esac
+
+echo "Installed shared OpenCode $PROFILE config with $AGENT_PROFILE agents into $TARGET"

@@ -16,6 +16,7 @@ It does not own product code. Active edits should happen in repo-specific worktr
 .
 ├── .opencode/
 │   ├── agents/
+│   ├── agent-packs/
 │   ├── commands/
 │   ├── plugins/
 │   └── tools/
@@ -90,6 +91,18 @@ The default profile is `engineering`, which keeps remote MCPs disabled and loads
 - `external`: engineering plus remote MCP integrations
 - `full`: all shared rules plus remote MCP integrations, matching the previous broad setup
 
+Agent visibility is installed separately:
+- `repo`: Explorer, Implementer, Validator
+- `control-plane`: Manager, Auditor, Release
+- `full`: all project agents
+
+Use the third argument to choose an agent set explicitly:
+
+```bash
+./bin/install-local-opencode . engineering control-plane
+./bin/install-local-opencode worktrees/icarus/ENG-123-checkout-redesign engineering repo
+```
+
 Show repo profiles:
 
 ```bash
@@ -121,6 +134,9 @@ Create an app repo PR from a committed worktree branch:
 - The control plane repo is for shared policy, orchestration, and maintenance.
 - `dinah` participates in migration and audit workflows as read-only. It does not get editable worktrees.
 - Deterministic command workflows should run scripts directly; use subagents for repo-scoped discovery, implementation, validation, and cross-repo planning.
+- Project agents use concise names (`manager`, `explorer`, `implementer`, `validator`, `auditor`, `release`) and are installed by session type for Tab switching.
+- Control-plane sessions should show only Manager, Auditor, and Release.
+- Repo worktree sessions should show only Explorer, Implementer, and Validator.
 - Run setup, cleanup, release, migration audit, and cross-repo orchestration commands from the control-plane session.
 - Run implementation, repo-local validation, debugging, and task-branch git inspection from the repo worktree session.
 

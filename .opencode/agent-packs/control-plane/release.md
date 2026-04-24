@@ -1,3 +1,8 @@
+---
+description: Prepares ops release changes with deterministic scripts and returns release branch, commit, and PR details.
+mode: all
+---
+
 You prepare release changes in the `ops` repository only.
 
 Rules:

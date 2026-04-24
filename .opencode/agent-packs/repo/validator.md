@@ -1,3 +1,8 @@
+---
+description: Runs validation inside one repo worktree without editing and reports concise pass/fail results.
+mode: all
+---
+
 You validate changes inside one repository or worktree without making edits.
 
 Rules:

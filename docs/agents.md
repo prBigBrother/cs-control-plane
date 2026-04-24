@@ -10,7 +10,27 @@ This document explains the current shared agents in the control plane and when t
 
 ## Agent List
 
-### `orchestrator`
+OpenCode uses the lowercase file name as the agent id. In the UI, treat these as the human-facing roles:
+- `manager` = Manager
+- `explorer` = Explorer
+- `implementer` = Implementer
+- `validator` = Validator
+- `auditor` = Auditor
+- `release` = Release
+
+Each agent is configured with `mode: all`, so it can be selected as a primary agent with Tab and can also be invoked as a subagent.
+
+Agent files live in packs:
+- `.opencode/agent-packs/control-plane/` contains Manager, Auditor, and Release.
+- `.opencode/agent-packs/repo/` contains Explorer, Implementer, and Validator.
+- `.opencode/agents/` is the active control-plane set.
+
+`bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
+- `repo` shows Explorer, Implementer, and Validator.
+- `control-plane` shows Manager, Auditor, and Release.
+- `full` shows all project agents.
+
+### Manager
 
 Purpose:
 - coordinate work across multiple repositories
@@ -32,7 +52,10 @@ Typical output:
 - ownership boundaries
 - dependency order
 
-### `repo-explorer`
+Agent id:
+- `manager`
+
+### Explorer
 
 Purpose:
 - inspect one repo or one worktree in read-only mode
@@ -53,7 +76,10 @@ Typical output:
 - risk list
 - missing information to resolve before coding
 
-### `repo-implementer`
+Agent id:
+- `explorer`
+
+### Implementer
 
 Purpose:
 - make changes inside one editable repo worktree
@@ -72,7 +98,10 @@ Typical output:
 - repo-local validation
 - ready-to-review delta
 
-### `repo-validator`
+Agent id:
+- `implementer`
+
+### Validator
 
 Purpose:
 - validate one repo or one worktree without making edits
@@ -93,7 +122,10 @@ Typical output:
 - first actionable failure
 - suggested owner for follow-up
 
-### `migration-auditor`
+Agent id:
+- `validator`
+
+### Auditor
 
 Purpose:
 - analyze migration boundaries between `dinah` and target repos
@@ -113,7 +145,10 @@ Typical output:
 - rollout/cutoff risks
 - cleanup targets for Phase 2
 
-### `release-manager`
+Agent id:
+- `auditor`
+
+### Release
 
 Purpose:
 - prepare release changes in the `ops` repo only
@@ -133,22 +168,25 @@ Typical output:
 - release PR body
 - changed values files only
 
+Agent id:
+- `release`
+
 ## Recommended Workflow
 
 ### Single-repo task
 
 1. Create the worktree with `./bin/new-task`.
 2. Open OpenCode in that worktree.
-3. Use `repo-explorer` if the scope is unclear.
-4. Use `repo-implementer` once the path is clear.
+3. Use `explorer` if the scope is unclear.
+4. Use `implementer` once the path is clear.
 
 ### Cross-repo task
 
-1. Use `orchestrator` to split the task by repo.
+1. Use `manager` to split the task by repo.
 2. Create one worktree per editable repo.
-3. Use one `repo-explorer` per repo in parallel when boundaries are unclear.
-4. Use one `repo-implementer` per editable repo worktree once the edit scope is known.
-5. Use one `repo-validator` per changed repo when validation can run independently.
+3. Use one `explorer` per repo in parallel when boundaries are unclear.
+4. Use one `implementer` per editable repo worktree once the edit scope is known.
+5. Use one `validator` per changed repo when validation can run independently.
 6. Bring compact summaries back together in the parent session.
 
 ### Migration task
@@ -161,16 +199,16 @@ Typical output:
 
 1. Use `./bin/compare` to inspect deployed vs target SHA.
 2. Use `/release-prepare` to create the `ops` release worktree, commit the release, push the branch, and open the PR.
-3. Use `release-manager` behavior in that `ops` session only.
+3. Use `release` behavior in that `ops` session only.
 4. Review the created PR.
 
 ## Commands That Fit The Agents
 
-- `/task-start` pairs with `repo-implementer`
-- `/task-map` helps `orchestrator` and `repo-explorer`
-- `/cross-impl` is the `orchestrator` entry point
-- `/migration-audit` pairs with `migration-auditor`
-- `/compare` and `/release-prepare` pair with `release-manager`
+- `/task-start` pairs with `implementer`
+- `/task-map` helps `manager` and `explorer`
+- `/cross-impl` is the `manager` entry point
+- `/migration-audit` pairs with `auditor`
+- `/compare` and `/release-prepare` pair with `release`
 - `/pr-comments` is useful when reviewing or addressing PR feedback
 - `/session-brief` gives repo-scoped agents compact state before handoff
 - `/task-close` is for cleanup after repo-local work is finished
@@ -179,6 +217,6 @@ Typical output:
 
 - Do not use the control-plane session as the main coding session.
 - Do not let two editing sessions work in the same repo worktree.
-- Do not use `migration-auditor` as a general code search tool for non-migration tasks.
+- Do not use `auditor` as a general code search tool for non-migration tasks.
 - Do not perform release edits from app worktrees.
 - Do not delegate deterministic script-backed commands just to run a script.

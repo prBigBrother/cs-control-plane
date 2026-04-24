@@ -89,11 +89,11 @@ Current shared agents are documented in:
 - `docs/agents.md`
 
 Current agent set:
-- `orchestrator`
-- `repo-explorer`
-- `repo-implementer`
-- `migration-auditor`
-- `release-manager`
+- `manager`
+- `explorer`
+- `implementer`
+- `auditor`
+- `release`
 
 ## Migration And Release Rules Added
 
