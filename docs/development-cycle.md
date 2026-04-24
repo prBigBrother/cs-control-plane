@@ -25,7 +25,7 @@ Use:
 Commands:
 - `/cross-impl <eng-id> <goal>` for multi-repo planning
 - `/migration-audit <feature-area>` for Dinah-to-target migration analysis
-- `/task-map <repo> <eng-id> <slug>` when you need to confirm a canonical worktree path
+- `/task-map <repo> <eng-id> [slug]` when you need to confirm a canonical worktree path
 
 Output:
 - repos involved
@@ -48,12 +48,12 @@ Use:
 - no agent
 
 Commands:
-- `/task-start <repo...> <eng-id> <slug> [type]`
+- `/task-start <repo...> <eng-id> [slug] [type]`
 
 Equivalent script:
 
 ```bash
-./bin/new-task <repo> <eng-id> <slug> [type]
+./bin/new-task <repo> <eng-id> [slug] [type]
 ```
 
 Output:
@@ -178,6 +178,7 @@ Use:
 Commands:
 - `/pr-create [draft|ready]` from the repo worktree
 - `/pr-create <worktree-path> [draft|ready]` from any session
+- `/pr-create <repo> <eng-id> [draft|ready]` from the control plane when one matching worktree exists
 - `/pr-create <repo> <eng-id> <slug> [draft|ready]` from the control plane
 
 Generated PR content includes:
@@ -301,7 +302,7 @@ Use:
 - no agent
 
 Commands:
-- `/task-close <repo> <eng-id> <slug>`
+- `/task-close <repo> <eng-id> [slug]`
 
 Rules:
 - Close worktrees only after PRs are merged or the branch is no longer needed.

@@ -2,6 +2,7 @@
 
 - Branch format: `<feature|bug|hotfix|release>/ENG-<id>/<slug>`
 - Worktree path format: `worktrees/<repo>/ENG-<id>-<slug>/`
+- Task helper commands may omit slug when exactly one matching worktree exists for the repo and ENG id.
 - Base submodule checkouts in `repos/*` should stay clean and aligned to `main`.
 - Create worktrees from `repos/*`, not from other worktrees.
 - Keep repo validation scoped to the repo where code changed.

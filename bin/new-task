@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# shellcheck source=../lib/task-common.sh
+source "$ROOT/lib/task-common.sh"
+
 link_if_missing() {
   local source_path="$1"
   local target_path="$2"
@@ -53,17 +58,37 @@ link_runtime_assets() {
   fi
 }
 
-if [ "$#" -lt 3 ]; then
-  echo "Usage: new-task <repo> <eng-id> <slug> [type]" >&2
+if [ "$#" -lt 2 ]; then
+  echo "Usage: new-task <repo> <eng-id> [slug] [type]" >&2
   exit 1
 fi
 
 REPO="$1"
 ENG_ID="$2"
-SLUG="$3"
+SLUG="${3:-}"
 TYPE="${4:-feature}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_PATH="$ROOT/repos/$REPO"
+
+case "$SLUG" in
+  feature|bug|hotfix|release)
+    TYPE="$SLUG"
+    SLUG=""
+    ;;
+esac
+
+if [ -z "$SLUG" ]; then
+  resolved_status=0
+  resolved_slug="$(resolve_existing_worktree_slug "$ROOT" "$REPO" "$ENG_ID")" || resolved_status=$?
+
+  if [ "$resolved_status" -eq 0 ]; then
+    SLUG="$resolved_slug"
+  elif [ "$resolved_status" -eq 2 ]; then
+    exit 2
+  else
+    SLUG="task"
+  fi
+fi
+
 WORKTREE_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
 BRANCH="$TYPE/$ENG_ID/$SLUG"
 

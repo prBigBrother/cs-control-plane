@@ -40,6 +40,7 @@ These are safe in either place when the target repo/path is explicit:
 - `/pr-comments <repo> <pr-number>`
 - `/session-brief [repo-or-worktree-path]`
 - `/pr-create [worktree-path] [draft|ready]`
+- `/pr-create [repo eng-id] [draft|ready]`
 - `/pr-create [repo eng-id slug] [draft|ready]`
 
 When in doubt, use the control plane for setup, cleanup, release, and cross-repo coordination; use the repo worktree for code changes and validation.
@@ -65,7 +66,7 @@ Backed by:
 - `./bin/new-task`
 
 Usage:
-- `/task-start <repo...> <eng-id> <slug> [type]`
+- `/task-start <repo...> <eng-id> [slug] [type]`
 
 Typical output:
 - created worktree paths
@@ -74,6 +75,7 @@ Typical output:
 
 Important behavior:
 - rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and `node_modules` links when source assets exist in the base checkout
+- slug is optional; when omitted, an existing matching worktree is reused if there is exactly one match, otherwise new worktrees use the fallback slug `task`
 - worktrees receive the repo agent set: Explorer, Implementer, and Validator
 - if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
 
@@ -94,12 +96,15 @@ Backed by:
 - `./bin/worktree-map`
 
 Usage:
-- `/task-map <repo> <eng-id> <slug>`
+- `/task-map <repo> <eng-id> [slug]`
 
 Typical output:
 - resolved worktree path
 - editable vs read-only status
 - no agent transcript
+
+Important behavior:
+- slug is optional; when omitted, a single existing matching worktree is resolved, multiple matches fail, and no match returns a placeholder path
 
 ### `/task-close`
 
@@ -118,12 +123,15 @@ Backed by:
 - `./bin/cleanup-task`
 
 Usage:
-- `/task-close <repo> <eng-id> <slug>`
+- `/task-close <repo> <eng-id> [slug]`
 
 Typical output:
 - removed worktree path
 - branch deletion status
 - no agent transcript
+
+Important behavior:
+- slug is optional only when exactly one worktree exists for the repo and ENG id
 
 ### `/compare`
 
@@ -179,6 +187,7 @@ Typical output:
 Session:
 - repo worktree with no repo args
 - any session with an explicit worktree path
+- control plane with explicit `repo eng-id`, when exactly one matching worktree exists
 - control plane with explicit `repo eng-id slug`
 
 Purpose:
@@ -197,6 +206,7 @@ Backed by:
 
 Usage:
 - `/pr-create [worktree-path] [draft|ready]`
+- `/pr-create [repo eng-id] [draft|ready]`
 - `/pr-create [repo eng-id slug] [draft|ready]`
 
 Typical output:

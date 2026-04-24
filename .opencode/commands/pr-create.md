@@ -9,15 +9,17 @@ Fast path:
 
 Usage:
 `/pr-create [worktree-path] [draft|ready]`
+`/pr-create [repo eng-id] [draft|ready]`
 `/pr-create [repo eng-id slug] [draft|ready]`
 
 Session:
 - repo worktree with no repo args
 - any session with an explicit worktree path
+- control plane with explicit `repo eng-id`, when exactly one matching worktree exists
 - control plane with explicit `repo eng-id slug`
 
 Rules:
-- Run `./bin/pr-create [worktree-path] [draft|ready]` or `./bin/pr-create [repo eng-id slug] [draft|ready]`.
+- Run `./bin/pr-create [worktree-path] [draft|ready]`, `./bin/pr-create [repo eng-id] [draft|ready]`, or `./bin/pr-create [repo eng-id slug] [draft|ready]`.
 - Refuse to create a PR from `main`.
 - Refuse dirty worktrees so uncommitted work is not left behind.
 - Generate the PR title as `ENG-<id>: <latest commit subject or task slug>`.

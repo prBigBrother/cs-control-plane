@@ -7,12 +7,13 @@ Fast path:
 - Return only created or reused worktree paths and any skipped read-only repos.
 
 Usage:
-`/task-start <repo...> <eng-id> <slug> [type]`
+`/task-start <repo...> <eng-id> [slug] [type]`
 
 Rules:
-- Accept one or more repo names followed by `ENG-<id>`, a slug, and an optional branch type.
+- Accept one or more repo names followed by `ENG-<id>`, an optional slug, and an optional branch type.
 - Default branch type to `feature`.
-- For each repo, run `./bin/new-task <repo> <eng-id> <slug> <type>`.
+- If slug is omitted, pass the args through to `./bin/new-task`; it resolves an existing matching worktree or uses the fallback slug `task`.
+- For each repo, run `./bin/new-task <repo> <eng-id> [slug] [type]`.
 - If the repo is non-editable, report that it is read-only and skip it.
 - If the worktree already exists, rerun `./bin/new-task` anyway so shared OpenCode config, env-file links, and `node_modules` links are repaired.
 - Return the created or repaired worktree paths.

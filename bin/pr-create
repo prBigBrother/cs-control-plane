@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
   local status="${1:-1}"
   echo "Usage: pr-create [worktree-path] [draft|ready]"
+  echo "       pr-create [repo eng-id] [draft|ready]"
   echo "       pr-create [repo eng-id slug] [draft|ready]"
   echo
   echo "Run from a repo worktree with no args, from any location with a worktree path,"
@@ -22,6 +23,10 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# shellcheck source=../lib/task-common.sh
+source "$ROOT/lib/task-common.sh"
+
 MODE="draft"
 TARGET_PATH=""
 TASK_ID=""
@@ -42,12 +47,36 @@ case "$#" in
     esac
     ;;
   2)
-    TARGET_PATH="$1"
-    MODE="$2"
+    case "$2" in
+      draft|ready)
+        TARGET_PATH="$1"
+        MODE="$2"
+        ;;
+      ENG-*)
+        REPO="$1"
+        ENG_ID="$2"
+        TASK_ID="$ENG_ID"
 
-    case "$MODE" in
-      draft|ready) ;;
-      *) usage ;;
+        if [ "$REPO" = "dinah" ]; then
+          echo "Error: dinah is read-only in this control plane" >&2
+          exit 2
+        fi
+
+        resolved_status=0
+        resolved_slug="$(resolve_existing_worktree_slug "$ROOT" "$REPO" "$ENG_ID")" || resolved_status=$?
+
+        if [ "$resolved_status" -eq 0 ]; then
+          TARGET_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$resolved_slug"
+        elif [ "$resolved_status" -eq 2 ]; then
+          exit 2
+        else
+          echo "Error: no worktree found for $REPO $ENG_ID; pass the slug explicitly." >&2
+          exit 2
+        fi
+        ;;
+      *)
+        usage
+        ;;
     esac
     ;;
   3|4)
@@ -67,7 +96,25 @@ case "$#" in
       exit 2
     fi
 
-    TARGET_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
+    case "$SLUG" in
+      draft|ready)
+        MODE="$SLUG"
+        resolved_status=0
+        resolved_slug="$(resolve_existing_worktree_slug "$ROOT" "$REPO" "$ENG_ID")" || resolved_status=$?
+
+        if [ "$resolved_status" -eq 0 ]; then
+          TARGET_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$resolved_slug"
+        elif [ "$resolved_status" -eq 2 ]; then
+          exit 2
+        else
+          echo "Error: no worktree found for $REPO $ENG_ID; pass the slug explicitly." >&2
+          exit 2
+        fi
+        ;;
+      *)
+        TARGET_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
+        ;;
+    esac
     ;;
   *)
     usage

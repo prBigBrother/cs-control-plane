@@ -6,8 +6,9 @@ Fast path:
 - Return the cleanup result and any branch/worktree state that still needs attention.
 
 Usage:
-`/task-close <repo> <eng-id> <slug>`
+`/task-close <repo> <eng-id> [slug]`
 
 Rules:
 - Resolve the worktree path.
-- Run `./bin/cleanup-task <repo> <eng-id> <slug>`.
+- Run `./bin/cleanup-task <repo> <eng-id> [slug]`.
+- If slug is omitted, cleanup resolves a single existing matching worktree and fails on zero or multiple matches.

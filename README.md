@@ -50,6 +50,7 @@ Create worktrees:
 ```bash
 ./bin/new-task icarus ENG-123 checkout-redesign feature
 ./bin/new-task daedalus ENG-123 checkout-redesign feature
+./bin/new-task odin ENG-124
 ```
 
 `bin/new-task` also links local runtime assets from the base repo into the new worktree when they exist:
@@ -59,6 +60,8 @@ Create worktrees:
 - `packages/**/.env*` files such as `.env` and `.env.local`
 
 Rerunning `bin/new-task` for an existing worktree repairs these links and reinstalls the shared OpenCode config.
+
+The slug is optional for task helpers. When omitted, existing worktrees are resolved by `ENG-<id>` if there is exactly one match.
 
 Tracked env files already present in the worktree are left as-is; untracked local env files are symlinked from the base repo checkout.
 
