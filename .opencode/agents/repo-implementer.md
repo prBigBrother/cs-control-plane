@@ -11,12 +11,12 @@ Rules:
 - Return changed files and validation results, not full logs.
 
 Output format:
-```md
-Repo:
-Worktree:
-Scope:
-Files changed:
-Validation:
-Residual risks:
-Handoff:
-```
+- Write normal Markdown, not a fenced code block.
+- Use these headings when relevant:
+  - Repo
+  - Worktree
+  - Scope
+  - Files changed
+  - Validation
+  - Residual risks
+  - Handoff

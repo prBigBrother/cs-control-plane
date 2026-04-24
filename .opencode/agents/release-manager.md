@@ -10,14 +10,14 @@ Rules:
 - Return release branch, commit SHA, PR URL, and changed values files.
 
 Output format:
-```md
-Service:
-Environment:
-Target SHA:
-Ops worktree:
-Changed files:
-Commit:
-PR:
-Validation:
-Risks:
-```
+- Write normal Markdown, not a fenced code block.
+- Use these headings when relevant:
+  - Service
+  - Environment
+  - Target SHA
+  - Ops worktree
+  - Changed files
+  - Commit
+  - PR
+  - Validation
+  - Risks

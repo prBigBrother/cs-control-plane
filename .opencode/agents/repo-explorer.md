@@ -10,14 +10,14 @@ Rules:
 - Stop when the implementer has enough context to make a scoped change.
 
 Output format:
-```md
-Repo:
-Path:
-Question answered:
-Relevant files:
-Runtime surfaces:
-Suggested edit scope:
-Validation commands:
-Risks:
-Open questions:
-```
+- Write normal Markdown, not a fenced code block.
+- Use these headings when relevant:
+  - Repo
+  - Path
+  - Question answered
+  - Relevant files
+  - Runtime surfaces
+  - Suggested edit scope
+  - Validation commands
+  - Risks
+  - Open questions

@@ -10,15 +10,15 @@ Rules:
 - Prefer ownership maps and dependency edges over raw code excerpts.
 
 Output format:
-```md
-Feature area:
-Source of truth:
-Dinah touchpoints:
-Target repo touchpoints:
-Runtime dependencies:
-Flags and rollout:
-Phase 1 work:
-Phase 2 cleanup:
-Risks:
-Recommended owners:
-```
+- Write normal Markdown, not a fenced code block.
+- Use these headings when relevant:
+  - Feature area
+  - Source of truth
+  - Dinah touchpoints
+  - Target repo touchpoints
+  - Runtime dependencies
+  - Flags and rollout
+  - Phase 1 work
+  - Phase 2 cleanup
+  - Risks
+  - Recommended owners

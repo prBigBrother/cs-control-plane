@@ -17,13 +17,13 @@ Delegation pattern:
 5. Merge outputs into a compact dependency-aware plan or status.
 
 Output format:
-```md
-Goal:
-Repos:
-Worktrees:
-Parallel agents:
-Dependency order:
-Validation:
-Risks:
-Next action:
-```
+- Write normal Markdown, not a fenced code block.
+- Use these headings when relevant:
+  - Goal
+  - Repos
+  - Worktrees
+  - Parallel agents
+  - Dependency order
+  - Validation
+  - Risks
+  - Next action
