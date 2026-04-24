@@ -31,6 +31,7 @@ Run these from `worktrees/<repo>/ENG-<id>-<slug>/` while doing repo-local implem
 - repo-local debugging commands
 - repo-local git inspection for the active task branch
 - `/session-brief` when you want a compact summary of the current repo session
+- `/pr-create [draft|ready]` after committing validated changes
 
 ### Either session
 
@@ -38,6 +39,8 @@ These are safe in either place when the target repo/path is explicit:
 
 - `/pr-comments <repo> <pr-number>`
 - `/session-brief [repo-or-worktree-path]`
+- `/pr-create [worktree-path] [draft|ready]`
+- `/pr-create [repo eng-id slug] [draft|ready]`
 
 When in doubt, use the control plane for setup, cleanup, release, and cross-repo coordination; use the repo worktree for code changes and validation.
 
@@ -68,6 +71,10 @@ Typical output:
 - created worktree paths
 - read-only skip notice for non-editable repos such as `dinah`
 - no agent transcript
+
+Important behavior:
+- rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and `node_modules` links when source assets exist in the base checkout
+- if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
 
 ### `/task-map`
 
@@ -165,6 +172,47 @@ Typical output:
 - PR metadata
 - compact actionable review summary by default
 - full PR description, issue comments, and review comments only when requested
+
+### `/pr-create`
+
+Session:
+- repo worktree with no repo args
+- any session with an explicit worktree path
+- control plane with explicit `repo eng-id slug`
+
+Purpose:
+- push the current task branch
+- create a GitHub pull request
+- generate a mandatory task-prefixed PR title and description
+- return the existing PR URL when one already exists for the branch
+
+Use it when:
+- repo-local changes are committed
+- validation status is known
+- you are ready to open a draft or ready-for-review PR
+
+Backed by:
+- `./bin/pr-create`
+
+Usage:
+- `/pr-create [worktree-path] [draft|ready]`
+- `/pr-create [repo eng-id slug] [draft|ready]`
+
+Typical output:
+- branch
+- GitHub repository
+- PR mode
+- PR title
+- PR URL
+
+Important behavior:
+- defaults to `draft`
+- requires a task id that can be inferred from args, branch, or worktree path
+- generates the PR title as `ENG-<id>: <latest commit subject or task slug>`
+- generates the PR body with summary, changed files, validation checklist, and rollout notes
+- refuses dirty worktrees
+- refuses to create a PR from `main`
+- use `/release-prepare`, not `/pr-create`, for ops release tag updates
 
 ### `/session-brief`
 
@@ -309,6 +357,7 @@ Typical output:
 
 Script-backed commands:
 - `/compare` → `./bin/compare`
+- `/pr-create` → `./bin/pr-create`
 - `/pr-comments` → `./bin/pr-comments`
 - `/release-prepare` → `./bin/release-prepare`
 - `/session-brief` → `./bin/session-brief`

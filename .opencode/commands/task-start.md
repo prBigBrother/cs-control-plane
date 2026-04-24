@@ -14,4 +14,5 @@ Rules:
 - Default branch type to `feature`.
 - For each repo, run `./bin/new-task <repo> <eng-id> <slug> <type>`.
 - If the repo is non-editable, report that it is read-only and skip it.
-- Return the created worktree paths.
+- If the worktree already exists, rerun `./bin/new-task` anyway so shared OpenCode config, env-file links, and `node_modules` links are repaired.
+- Return the created or repaired worktree paths.

@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  local status="${1:-1}"
+  echo "Usage: pr-create [worktree-path] [draft|ready]"
+  echo "       pr-create [repo eng-id slug] [draft|ready]"
+  echo
+  echo "Run from a repo worktree with no args, from any location with a worktree path,"
+  echo "or from the control plane with repo/task args."
+  echo "Defaults to draft. Use 'ready' to open a ready-for-review PR."
+  echo "PR titles are generated as 'ENG-<id>: ...'."
+  exit "$status"
+}
+
+if [ "$#" -gt 4 ]; then
+  usage
+fi
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage 0
+fi
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MODE="draft"
+TARGET_PATH=""
+TASK_ID=""
+
+case "$#" in
+  0)
+    TARGET_PATH="$(pwd)"
+    ;;
+  1)
+    case "$1" in
+      draft|ready)
+        MODE="$1"
+        TARGET_PATH="$(pwd)"
+        ;;
+      *)
+        TARGET_PATH="$1"
+        ;;
+    esac
+    ;;
+  2)
+    TARGET_PATH="$1"
+    MODE="$2"
+
+    case "$MODE" in
+      draft|ready) ;;
+      *) usage ;;
+    esac
+    ;;
+  3|4)
+    REPO="$1"
+    ENG_ID="$2"
+    SLUG="$3"
+    MODE="${4:-draft}"
+    TASK_ID="$ENG_ID"
+
+    case "$MODE" in
+      draft|ready) ;;
+      *) usage ;;
+    esac
+
+    if [ "$REPO" = "dinah" ]; then
+      echo "Error: dinah is read-only in this control plane" >&2
+      exit 2
+    fi
+
+    TARGET_PATH="$ROOT/worktrees/$REPO/$ENG_ID-$SLUG"
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+if [ ! -d "$TARGET_PATH" ]; then
+  echo "Error: worktree not found: $TARGET_PATH" >&2
+  exit 3
+fi
+
+if ! git -C "$TARGET_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Error: target is not a git worktree: $TARGET_PATH" >&2
+  exit 4
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "Error: missing required command: gh" >&2
+  exit 5
+fi
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "Error: GitHub CLI is not authenticated" >&2
+  exit 6
+fi
+
+BRANCH="$(git -C "$TARGET_PATH" branch --show-current)"
+if [ -z "$BRANCH" ]; then
+  echo "Error: could not determine current branch" >&2
+  exit 7
+fi
+
+if [ "$BRANCH" = "main" ]; then
+  echo "Error: refusing to create a PR from main" >&2
+  exit 8
+fi
+
+if [ -n "$(git -C "$TARGET_PATH" status --porcelain)" ]; then
+  echo "Error: worktree has uncommitted changes. Commit or stash them before creating a PR." >&2
+  git -C "$TARGET_PATH" status --short >&2
+  exit 9
+fi
+
+REMOTE_URL="$(git -C "$TARGET_PATH" remote get-url origin)"
+REPO_SLUG="$(printf '%s\n' "$REMOTE_URL" | sed -E 's#^git@github.com:##; s#^https://github.com/##; s#\.git$##')"
+
+if [ -z "$REPO_SLUG" ] || [ "$REPO_SLUG" = "$REMOTE_URL" ]; then
+  echo "Error: could not derive GitHub repo from origin remote: $REMOTE_URL" >&2
+  exit 10
+fi
+
+if [ -z "$TASK_ID" ]; then
+  TASK_ID="$(printf '%s\n' "$BRANCH" | grep -Eo 'ENG-[0-9]+' | head -1 || true)"
+fi
+
+if [ -z "$TASK_ID" ]; then
+  TASK_ID="$(basename "$TARGET_PATH" | grep -Eo 'ENG-[0-9]+' | head -1 || true)"
+fi
+
+if [ -z "$TASK_ID" ]; then
+  echo "Error: could not determine task id. Branch or worktree path must contain ENG-<id>." >&2
+  exit 11
+fi
+
+LATEST_SUBJECT="$(git -C "$TARGET_PATH" log -1 --pretty=%s)"
+TITLE_DETAIL="$(printf '%s\n' "$LATEST_SUBJECT" | sed -E "s/^$TASK_ID[ :_-]+//")"
+
+if [ -z "$TITLE_DETAIL" ] || { [ "$TITLE_DETAIL" = "$LATEST_SUBJECT" ] && printf '%s\n' "$LATEST_SUBJECT" | grep -Eq "^$TASK_ID$"; }; then
+  TITLE_DETAIL="$(basename "$TARGET_PATH" | sed -E "s/^$TASK_ID-?//; s/-/ /g")"
+fi
+
+if [ -z "$TITLE_DETAIL" ]; then
+  echo "Error: could not generate PR title detail from latest commit or worktree slug" >&2
+  exit 12
+fi
+
+PR_TITLE="$TASK_ID: $TITLE_DETAIL"
+
+BODY_FILE="$(mktemp)"
+trap 'rm -f "$BODY_FILE"' EXIT
+
+git -C "$TARGET_PATH" fetch origin main >/dev/null 2>&1
+BASE_REF="origin/main"
+
+{
+  echo "## Summary"
+  while IFS= read -r commit_subject; do
+    [ -n "$commit_subject" ] || continue
+    echo "- $commit_subject"
+  done < <(git -C "$TARGET_PATH" log --reverse --pretty='format:%s' "$BASE_REF"..HEAD)
+
+  echo
+  echo "## Changed Files"
+  while IFS= read -r changed_file; do
+    [ -n "$changed_file" ] || continue
+    echo "- $changed_file"
+  done < <(git -C "$TARGET_PATH" diff --name-only "$BASE_REF"...HEAD)
+
+  echo
+  echo "## Validation"
+  echo "- [ ] Add validation performed before marking ready for review"
+
+  echo
+  echo "## Rollout Notes"
+  echo "- None"
+} >"$BODY_FILE"
+
+EXISTING_PR_URL="$(gh pr list --repo "$REPO_SLUG" --head "$BRANCH" --state open --json url --jq '.[0].url // ""')"
+
+if [ -n "$EXISTING_PR_URL" ]; then
+  echo "Branch: $BRANCH"
+  echo "Repository: $REPO_SLUG"
+  echo "Title: $PR_TITLE"
+  echo "PR URL: $EXISTING_PR_URL"
+  exit 0
+fi
+
+git -C "$TARGET_PATH" push -u origin "$BRANCH" >/dev/null
+
+CREATE_ARGS=(pr create --repo "$REPO_SLUG" --base main --head "$BRANCH" --title "$PR_TITLE" --body-file "$BODY_FILE")
+if [ "$MODE" = "draft" ]; then
+  CREATE_ARGS+=(--draft)
+fi
+
+PR_URL="$(cd "$TARGET_PATH" && gh "${CREATE_ARGS[@]}")"
+
+echo "Branch: $BRANCH"
+echo "Repository: $REPO_SLUG"
+echo "Mode: $MODE"
+echo "Title: $PR_TITLE"
+echo "PR URL: $PR_URL"

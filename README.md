@@ -57,6 +57,8 @@ Create worktrees:
 - repo-root `.env*` files such as `.env` and `.env.local`
 - `packages/**/.env*` files such as `.env` and `.env.local`
 
+Rerunning `bin/new-task` for an existing worktree repairs these links and reinstalls the shared OpenCode config.
+
 Tracked env files already present in the worktree are left as-is; untracked local env files are symlinked from the base repo checkout.
 
 Release helpers:
@@ -107,6 +109,12 @@ Create a compact handoff brief for agents:
 ./bin/session-brief worktrees/icarus/ENG-123-checkout-redesign
 ```
 
+Create an app repo PR from a committed worktree branch:
+
+```bash
+./bin/pr-create worktrees/icarus/ENG-123-checkout-redesign
+```
+
 ## OpenCode Session Model
 
 - Implementation sessions should run inside a repo worktree.
@@ -121,3 +129,5 @@ Create a compact handoff brief for agents:
 See [docs/agents.md](docs/agents.md) for the current shared agents, when to use each one, and how they fit into the multi-session workflow.
 
 See [docs/commands.md](docs/commands.md) for the current shared slash commands, their intended use, and which ones are backed by `bin/` scripts.
+
+See [docs/development-cycle.md](docs/development-cycle.md) for the full development cycle from task intake through release preparation.
