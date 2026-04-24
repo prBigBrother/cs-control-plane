@@ -1,5 +1,10 @@
 Run a migration-oriented audit across legacy and target repos.
 
+Delegation:
+- Immediately use the `Task` tool to delegate to the `migration-auditor` agent.
+- Pass the full slash-command invocation as the task prompt so the agent receives the original args unchanged.
+- Return the agent result directly.
+
 Usage:
 `/migration-audit <feature-area>`
 
