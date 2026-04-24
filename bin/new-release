@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   echo "Usage: new-release <service> [environment]"
-  echo "  service      daedalus | icarus | odin"
+  echo "  service      daedalus | icarus | odin | olympus"
   echo "  environment  staging | production | both (default)"
   exit 1
 }
@@ -19,7 +19,7 @@ VALUES_STAGING="$OPS_PATH/k8s/$SERVICE/values.staging.yaml"
 VALUES_PRODUCTION="$OPS_PATH/k8s/$SERVICE/values.production.yaml"
 
 case "$SERVICE" in
-  daedalus|icarus|odin) ;;
+  daedalus|icarus|odin|olympus) ;;
   *) usage ;;
 esac
 

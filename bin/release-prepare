@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: release-prepare <service> [environment]"
+  echo "  service      daedalus | icarus | odin | olympus"
+  echo "  environment  staging | production | both (default)"
+  exit 1
+}
+
+[[ $# -lt 1 || $# -gt 2 ]] && usage
+
+SERVICE=$1
+ENVIRONMENT_INPUT=${2:-both}
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# shellcheck source=../lib/release-common.sh
+source "$ROOT/lib/release-common.sh"
+
+release_require_clean_ops_checkout() {
+  local ops_path=$1
+  if [ -n "$(git -C "$ops_path" ls-files --others --exclude-standard)" ]; then
+    echo "Error: repos/ops has untracked files. Clean or stash it before running release-prepare." >&2
+    exit 1
+  fi
+
+  if ! git -C "$ops_path" diff --ignore-cr-at-eol --quiet -- .; then
+    echo "Error: repos/ops is dirty. Clean or stash it before running release-prepare." >&2
+    exit 1
+  fi
+
+  if ! git -C "$ops_path" diff --cached --ignore-cr-at-eol --quiet -- .; then
+    echo "Error: repos/ops has staged changes. Clean or stash it before running release-prepare." >&2
+    exit 1
+  fi
+}
+
+release_require_gh_auth() {
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "Error: missing required command: gh" >&2
+    exit 1
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "Error: GitHub CLI is not authenticated" >&2
+    exit 1
+  fi
+}
+
+release_remote_branch_exists() {
+  local branch=$1
+  git -C "$(release_ops_path "$ROOT")" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+}
+
+release_open_pr_url_for_branch() {
+  local branch=$1
+  gh pr list --repo citizenshipper/ops --head "$branch" --state open --json url --jq '.[0].url // ""'
+}
+
+release_reset_remote_branch() {
+  local branch=$1
+  local open_pr_url
+
+  if ! release_remote_branch_exists "$branch"; then
+    return 0
+  fi
+
+  open_pr_url=$(release_open_pr_url_for_branch "$branch")
+  if [ -n "$open_pr_url" ]; then
+    EXISTING_PR_URL="$open_pr_url"
+    return 0
+  fi
+
+  git -C "$(release_ops_path "$ROOT")" push origin --delete "$branch" >/dev/null
+}
+
+release_worktree_value_file() {
+  local worktree_path=$1
+  local service=$2
+  local environment=$3
+  echo "$worktree_path/$(release_values_relpath "$service" "$environment")"
+}
+
+release_update_tag_file() {
+  local values_file=$1
+  local new_sha=$2
+  local temp_file
+
+  if [ ! -f "$values_file" ]; then
+    echo "Error: missing values file: $values_file" >&2
+    exit 1
+  fi
+
+  temp_file=$(mktemp)
+  awk -v sha="$new_sha" '
+    /^[[:space:]]+tag:[[:space:]]+/ {
+      sub(/tag:[[:space:]]+.*/, "tag: " sha)
+    }
+    { print }
+  ' "$values_file" >"$temp_file"
+  mv "$temp_file" "$values_file"
+}
+
+release_require_expected_staging() {
+  local worktree_path=$1
+  local expected_files=$2
+  local staged_files
+  staged_files=$(git -C "$worktree_path" diff --cached --name-only | sort)
+
+  if [ "$staged_files" != "$expected_files" ]; then
+    echo "Error: staged files do not match the intended release file set" >&2
+    echo "Expected:" >&2
+    printf '%s\n' "$expected_files" >&2
+    echo "Actual:" >&2
+    printf '%s\n' "$staged_files" >&2
+    exit 1
+  fi
+}
+
+release_require_changes_present() {
+  local worktree_path=$1
+  if git -C "$worktree_path" diff --cached --quiet; then
+    echo "Error: target SHA is already deployed for the requested environment" >&2
+    exit 1
+  fi
+}
+
+release_parse_new_release_output() {
+  local output=$1
+  RELEASE_WORKTREE_PATH=$(printf '%s\n' "$output" | awk -F': ' '/^Ready:/ {print $2}')
+  RELEASE_BRANCH=$(printf '%s\n' "$output" | awk -F': ' '/^Branch:/ {print $2}')
+
+  if [ -z "$RELEASE_WORKTREE_PATH" ] || [ -z "$RELEASE_BRANCH" ]; then
+    echo "Error: could not parse worktree information from ./bin/new-release output" >&2
+    exit 1
+  fi
+}
+
+release_require_service "$SERVICE"
+ENVIRONMENT=$(release_normalize_environment "$ENVIRONMENT_INPUT")
+release_require_initialized_repos "$ROOT" "$SERVICE"
+release_require_clean_ops_checkout "$(release_ops_path "$ROOT")"
+release_require_gh_auth
+release_fetch_origin "$ROOT" "$SERVICE"
+
+TARGET_SHA=$(release_resolve_target_sha "$ROOT" "$SERVICE")
+TARGET_SUBJECT=$(release_pr_title "$ROOT" "$SERVICE" "$TARGET_SHA")
+COMMIT_MESSAGE=$(release_commit_message "$SERVICE" "$ENVIRONMENT" "$TARGET_SUBJECT")
+STAGING_OLD_SHA=$(release_read_deployed_sha "$ROOT" "$SERVICE" staging)
+PRODUCTION_OLD_SHA=$(release_read_deployed_sha "$ROOT" "$SERVICE" production)
+
+if [ "$ENVIRONMENT" = "staging" ] && [ "$STAGING_OLD_SHA" = "$TARGET_SHA" ]; then
+  echo "Error: target SHA is already deployed to staging" >&2
+  exit 1
+fi
+
+if [ "$ENVIRONMENT" = "production" ] && [ "$PRODUCTION_OLD_SHA" = "$TARGET_SHA" ]; then
+  echo "Error: target SHA is already deployed to production" >&2
+  exit 1
+fi
+
+if [ "$ENVIRONMENT" = "both" ] && [ "$STAGING_OLD_SHA" = "$TARGET_SHA" ] && [ "$PRODUCTION_OLD_SHA" = "$TARGET_SHA" ]; then
+  echo "Error: target SHA is already deployed to staging and production" >&2
+  exit 1
+fi
+
+NEW_RELEASE_OUTPUT=$("$ROOT/bin/new-release" "$SERVICE" "$ENVIRONMENT")
+release_parse_new_release_output "$NEW_RELEASE_OUTPUT"
+EXISTING_PR_URL=""
+release_reset_remote_branch "$RELEASE_BRANCH"
+
+EXPECTED_FILES=$(release_changed_files "$SERVICE" "$ENVIRONMENT" | sort)
+
+while IFS= read -r relpath; do
+  [ -n "$relpath" ] || continue
+  release_update_tag_file "$RELEASE_WORKTREE_PATH/$relpath" "$TARGET_SHA"
+  git -C "$RELEASE_WORKTREE_PATH" add "$relpath"
+done < <(printf '%s\n' "$EXPECTED_FILES")
+
+release_require_expected_staging "$RELEASE_WORKTREE_PATH" "$EXPECTED_FILES"
+release_require_changes_present "$RELEASE_WORKTREE_PATH"
+
+BODY_FILE=$(mktemp)
+trap 'rm -f "$BODY_FILE"' EXIT
+release_write_pr_body "$ROOT" "$SERVICE" "$TARGET_SHA" "$ENVIRONMENT" "$BODY_FILE" "$STAGING_OLD_SHA" "$PRODUCTION_OLD_SHA"
+PR_TITLE=$(release_pr_title "$ROOT" "$SERVICE" "$TARGET_SHA")
+
+git -C "$RELEASE_WORKTREE_PATH" commit -m "$COMMIT_MESSAGE" >/dev/null
+COMMIT_SHA=$(git -C "$RELEASE_WORKTREE_PATH" rev-parse HEAD)
+if [ -n "$EXISTING_PR_URL" ]; then
+  git -C "$RELEASE_WORKTREE_PATH" push --force-with-lease -u origin "$RELEASE_BRANCH" >/dev/null
+  PR_URL="$EXISTING_PR_URL"
+else
+  git -C "$RELEASE_WORKTREE_PATH" push -u origin "$RELEASE_BRANCH" >/dev/null
+  PR_URL=$(gh pr create --repo citizenshipper/ops --base main --head "$RELEASE_BRANCH" --title "$PR_TITLE" --body-file "$BODY_FILE")
+fi
+
+echo "Release worktree: $RELEASE_WORKTREE_PATH"
+echo "Branch: $RELEASE_BRANCH"
+echo "Target SHA: $TARGET_SHA"
+echo "Changed files:"
+printf '%s\n' "$EXPECTED_FILES"
+echo "Commit SHA: $COMMIT_SHA"
+echo "PR URL: $PR_URL"

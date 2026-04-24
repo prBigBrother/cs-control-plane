@@ -63,11 +63,14 @@ Release helpers:
 
 ```bash
 ./bin/compare icarus staging
+./bin/release-prepare daedalus staging
 ./bin/new-release daedalus production
 ./bin/release-pr-body daedalus <full-sha> production
 ```
 
-These scripts compare deployed SHAs, create isolated `ops` release worktrees, and generate deterministic release PR bodies from the current release state.
+These scripts compare deployed SHAs, create isolated `ops` release worktrees, generate deterministic release PR bodies from the current release state, and automate end-to-end release PR creation.
+
+`./bin/release-prepare` fails early if `repos/ops` has unrelated dirty state, so release PRs start from a clean base checkout.
 
 Attach shared OpenCode config to a base repo or worktree:
 
@@ -95,6 +98,8 @@ Map worktrees:
 - The control plane repo is for shared policy, orchestration, and maintenance.
 - `dinah` participates in migration and audit workflows as read-only. It does not get editable worktrees.
 
-## Agent Guide
+## Guides
 
 See [docs/agents.md](/Users/prbigbrother/Sites/citizenshipper/control-plane/docs/agents.md) for the current shared agents, when to use each one, and how they fit into the multi-session workflow.
+
+See [docs/commands.md](/Users/prbigbrother/Sites/citizenshipper/control-plane/docs/commands.md) for the current shared slash commands, their intended use, and which ones are backed by `bin/` scripts.

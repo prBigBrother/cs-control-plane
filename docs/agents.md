@@ -137,9 +137,9 @@ Typical output:
 ### Release task
 
 1. Use `./bin/compare` to inspect deployed vs target SHA.
-2. Use `./bin/new-release` to create the `ops` release worktree.
+2. Use `/release-prepare` to create the `ops` release worktree, commit the release, push the branch, and open the PR.
 3. Use `release-manager` behavior in that `ops` session only.
-4. Use `./bin/release-pr-body` to generate the PR body.
+4. Review the created PR.
 
 ## Commands That Fit The Agents
 

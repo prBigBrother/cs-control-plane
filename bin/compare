@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   echo "Usage: compare <service> <environment> [target-sha]"
-  echo "  service      daedalus | icarus | odin"
+  echo "  service      daedalus | icarus | odin | olympus"
   echo "  environment  staging | production | prod"
   echo "  target-sha   optional full or partial commit SHA to compare against"
   exit 1
@@ -12,68 +12,34 @@ usage() {
 [[ $# -lt 2 || $# -gt 3 ]] && usage
 
 SERVICE=$1
-ENVIRONMENT=$2
+ENVIRONMENT_INPUT=$2
 TARGET_SHA_INPUT=${3:-}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_PATH="$ROOT/repos/$SERVICE"
-OPS_PATH="$ROOT/repos/ops"
 
-case "$SERVICE" in
-  daedalus|icarus|odin) ;;
-  *) usage ;;
-esac
+# shellcheck source=../lib/release-common.sh
+source "$ROOT/lib/release-common.sh"
 
-case "$ENVIRONMENT" in
-  staging) VALUES_ENV=staging ;;
-  production|prod) VALUES_ENV=production ;;
-  *) usage ;;
-esac
+release_require_service "$SERVICE"
+ENVIRONMENT=$(release_normalize_compare_environment "$ENVIRONMENT_INPUT")
+release_require_initialized_repos "$ROOT" "$SERVICE"
+release_fetch_origin "$ROOT" "$SERVICE"
 
-VALUES_FILE="k8s/$SERVICE/values.$VALUES_ENV.yaml"
-
-if [ ! -e "$REPO_PATH/.git" ] || [ ! -e "$OPS_PATH/.git" ]; then
-  echo "Required repos are not initialized under repos/" >&2
-  exit 1
-fi
-
-git -C "$REPO_PATH" fetch origin >/dev/null
-git -C "$OPS_PATH" fetch origin >/dev/null
-
-if ! git -C "$OPS_PATH" show "origin/main:$VALUES_FILE" >/dev/null 2>&1; then
-  echo "Error: $VALUES_FILE not found on ops origin/main" >&2
-  exit 1
-fi
-
-DEPLOYED_SHA=$(git -C "$OPS_PATH" show "origin/main:$VALUES_FILE" | grep -E '^[[:space:]]+tag:' | head -1 | awk '{print $2}' | tr -d '\r')
-
-if [ -z "$DEPLOYED_SHA" ]; then
-  echo "Error: could not read deployed SHA from ops origin/main:$VALUES_FILE" >&2
-  exit 1
-fi
-
-if ! git -C "$REPO_PATH" cat-file -e "${DEPLOYED_SHA}^{commit}" 2>/dev/null; then
-  echo "Error: deployed SHA '$DEPLOYED_SHA' not found in $SERVICE" >&2
-  exit 1
-fi
+DEPLOYED_SHA=$(release_read_deployed_sha "$ROOT" "$SERVICE" "$ENVIRONMENT")
+release_require_commit "$ROOT" "$SERVICE" "deployed" "$DEPLOYED_SHA"
 
 if [ -n "$TARGET_SHA_INPUT" ]; then
-  if ! git -C "$REPO_PATH" cat-file -e "${TARGET_SHA_INPUT}^{commit}" 2>/dev/null; then
-    echo "Error: target SHA '$TARGET_SHA_INPUT' not found in $SERVICE" >&2
-    exit 1
-  fi
-
-  TARGET_SHA=$(git -C "$REPO_PATH" rev-parse "$TARGET_SHA_INPUT")
+  TARGET_SHA=$(release_resolve_target_sha "$ROOT" "$SERVICE" "$TARGET_SHA_INPUT")
   TARGET_LABEL="Target"
 else
-  TARGET_SHA=$(git -C "$REPO_PATH" rev-parse origin/main)
+  TARGET_SHA=$(release_resolve_target_sha "$ROOT" "$SERVICE")
   TARGET_LABEL="origin/main"
 fi
 
-DEPLOYED_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$DEPLOYED_SHA")
-TARGET_SHORT=$(git -C "$REPO_PATH" rev-parse --short "$TARGET_SHA")
+DEPLOYED_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$DEPLOYED_SHA")
+TARGET_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$TARGET_SHA")
 
 echo "Service:      $SERVICE"
-echo "Environment:  $VALUES_ENV"
+echo "Environment:  $ENVIRONMENT"
 echo "Deployed:     $DEPLOYED_SHA"
 echo "$TARGET_LABEL:         $TARGET_SHA"
 echo ""
@@ -84,4 +50,4 @@ if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ]; then
 fi
 
 echo "Commits ($DEPLOYED_SHORT..$TARGET_SHORT):"
-git -C "$REPO_PATH" log --format='- `%h` %s (%an <%ae>)' "${DEPLOYED_SHA}..${TARGET_SHA}"
+release_commit_list "$ROOT" "$SERVICE" "$DEPLOYED_SHA" "$TARGET_SHA" '- `%h` %s (%an <%ae>)'
