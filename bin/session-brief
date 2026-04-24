@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -gt 1 ]; then
+  echo "Usage: session-brief [repo-or-worktree-path]" >&2
+  exit 1
+fi
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET_INPUT="${1:-.}"
+
+case "$TARGET_INPUT" in
+  /*) TARGET="$TARGET_INPUT" ;;
+  *) TARGET="$ROOT/$TARGET_INPUT" ;;
+esac
+
+if [ ! -d "$TARGET" ]; then
+  echo "Target directory not found: $TARGET" >&2
+  exit 2
+fi
+
+if ! git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Target is not a git worktree: $TARGET" >&2
+  exit 3
+fi
+
+case "$TARGET" in
+  "$ROOT"/*) DISPLAY_PATH="${TARGET#"$ROOT"/}" ;;
+  "$ROOT") DISPLAY_PATH="." ;;
+  *) DISPLAY_PATH="$TARGET" ;;
+esac
+
+echo "Path: $DISPLAY_PATH"
+echo "Branch: $(git -C "$TARGET" branch --show-current 2>/dev/null || true)"
+echo
+echo "Git status:"
+git -C "$TARGET" status --short
+
+if [ -f "$TARGET/package.json" ]; then
+  echo
+  echo "Package scripts:"
+  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); for (const name of Object.keys(p.scripts || {}).sort()) console.log(`- ${name}`)' "$TARGET/package.json"
+fi
+
+if [ -f "$TARGET/AGENTS.md" ]; then
+  echo
+  echo "Local AGENTS.md: present"
+fi

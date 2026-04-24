@@ -1,9 +1,10 @@
 Create one or more worktrees for an Engineering task.
 
-Delegation:
-- Immediately use the `Task` tool to delegate to the `orchestrator` agent.
-- Pass the full slash-command invocation as the task prompt so the agent receives the original args unchanged.
-- Return the agent result directly.
+Fast path:
+- Do not delegate this command to an agent.
+- Run `./bin/new-task` once per editable repo.
+- If multiple repos are requested, run independent repo setup steps in parallel when the shell/tooling supports it.
+- Return only created or reused worktree paths and any skipped read-only repos.
 
 Usage:
 `/task-start <repo...> <eng-id> <slug> [type]`

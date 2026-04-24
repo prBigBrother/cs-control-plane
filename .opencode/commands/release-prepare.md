@@ -1,9 +1,9 @@
 Prepare a release in the `ops` repo based on app repo heads.
 
 Delegation:
-- Immediately use the `Task` tool to delegate to the `release-manager` agent.
-- Pass the full slash-command invocation as the task prompt so the agent receives the original args unchanged.
-- Return the agent result directly.
+- Delegate to the `release-manager` agent only after confirming the request needs release preparation rather than a simple compare.
+- Pass the full slash-command invocation unchanged.
+- The release manager must keep the flow script-driven and return the release branch, commit, and PR URL.
 
 Usage:
 `/release-prepare <service> [environment]`

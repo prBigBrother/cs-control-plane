@@ -77,7 +77,16 @@ Attach shared OpenCode config to a base repo or worktree:
 ```bash
 ./bin/install-local-opencode repos/icarus
 ./bin/install-local-opencode worktrees/icarus/ENG-123-checkout-redesign
+./bin/install-local-opencode worktrees/daedalus/ENG-456-migration-cutover migration
+./bin/install-local-opencode worktrees/ops/ENG-789-release release
+./bin/install-local-opencode repos/icarus full
 ```
+
+The default profile is `engineering`, which keeps remote MCPs disabled and loads only shared engineering instructions. Optional profiles are:
+- `migration`: engineering plus migration rules
+- `release`: engineering plus release rules
+- `external`: engineering plus remote MCP integrations
+- `full`: all shared rules plus remote MCP integrations, matching the previous broad setup
 
 Show repo profiles:
 
@@ -92,14 +101,23 @@ Map worktrees:
 ./bin/worktree-map icarus ENG-123 checkout-redesign
 ```
 
+Create a compact handoff brief for agents:
+
+```bash
+./bin/session-brief worktrees/icarus/ENG-123-checkout-redesign
+```
+
 ## OpenCode Session Model
 
 - Implementation sessions should run inside a repo worktree.
 - The control plane repo is for shared policy, orchestration, and maintenance.
 - `dinah` participates in migration and audit workflows as read-only. It does not get editable worktrees.
+- Deterministic command workflows should run scripts directly; use subagents for repo-scoped discovery, implementation, validation, and cross-repo planning.
+- Run setup, cleanup, release, migration audit, and cross-repo orchestration commands from the control-plane session.
+- Run implementation, repo-local validation, debugging, and task-branch git inspection from the repo worktree session.
 
 ## Guides
 
-See [docs/agents.md](/Users/prbigbrother/Sites/citizenshipper/control-plane/docs/agents.md) for the current shared agents, when to use each one, and how they fit into the multi-session workflow.
+See [docs/agents.md](docs/agents.md) for the current shared agents, when to use each one, and how they fit into the multi-session workflow.
 
-See [docs/commands.md](/Users/prbigbrother/Sites/citizenshipper/control-plane/docs/commands.md) for the current shared slash commands, their intended use, and which ones are backed by `bin/` scripts.
+See [docs/commands.md](docs/commands.md) for the current shared slash commands, their intended use, and which ones are backed by `bin/` scripts.

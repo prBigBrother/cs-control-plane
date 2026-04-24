@@ -7,10 +7,46 @@ This document explains the current shared slash commands in the control plane, w
 - Use control-plane commands for shared orchestration, worktree bootstrap, release helpers, and review utilities.
 - Prefer running implementation work inside the target repo worktree, not from the control-plane repo.
 - When a command maps to a `bin/` script, prefer the script-backed path so behavior stays deterministic.
+- Do not delegate simple script-backed commands to agents. Delegate only when planning, investigation, implementation, validation, or release judgment is required.
+
+## Where Commands Belong
+
+### Control-plane session only
+
+Run these from the control-plane repo root because they create, remove, coordinate, or release shared worktrees:
+
+- `/task-start`
+- `/task-map`
+- `/task-close`
+- `/cross-impl`
+- `/migration-audit`
+- `/compare`
+- `/release-prepare`
+
+### Repo worktree session
+
+Run these from `worktrees/<repo>/ENG-<id>-<slug>/` while doing repo-local implementation:
+
+- repo-local build, lint, typecheck, and test commands from that repo's `AGENTS.md`
+- repo-local debugging commands
+- repo-local git inspection for the active task branch
+- `/session-brief` when you want a compact summary of the current repo session
+
+### Either session
+
+These are safe in either place when the target repo/path is explicit:
+
+- `/pr-comments <repo> <pr-number>`
+- `/session-brief [repo-or-worktree-path]`
+
+When in doubt, use the control plane for setup, cleanup, release, and cross-repo coordination; use the repo worktree for code changes and validation.
 
 ## Command List
 
 ### `/task-start`
+
+Session:
+- control-plane only
 
 Purpose:
 - create one or more repo worktrees for an engineering task
@@ -31,8 +67,12 @@ Usage:
 Typical output:
 - created worktree paths
 - read-only skip notice for non-editable repos such as `dinah`
+- no agent transcript
 
 ### `/task-map`
+
+Session:
+- control-plane only
 
 Purpose:
 - resolve the expected worktree path for a repo task
@@ -51,8 +91,12 @@ Usage:
 Typical output:
 - resolved worktree path
 - editable vs read-only status
+- no agent transcript
 
 ### `/task-close`
+
+Session:
+- control-plane only
 
 Purpose:
 - remove a task worktree and prune git worktree state
@@ -71,8 +115,12 @@ Usage:
 Typical output:
 - removed worktree path
 - branch deletion status
+- no agent transcript
 
 ### `/compare`
+
+Session:
+- control-plane only
 
 Purpose:
 - compare the SHA currently deployed in `ops` with a target app SHA
@@ -93,8 +141,12 @@ Typical output:
 - deployed SHA
 - target SHA
 - commit list between those revisions
+- no agent transcript
 
 ### `/pr-comments`
+
+Session:
+- either session when the repo argument is explicit
 
 Purpose:
 - fetch the PR description, issue comments, review summaries, and code review comments from GitHub
@@ -111,11 +163,41 @@ Usage:
 
 Typical output:
 - PR metadata
-- PR description
-- issue comments
-- review comments and threads
+- compact actionable review summary by default
+- full PR description, issue comments, and review comments only when requested
+
+### `/session-brief`
+
+Session:
+- either session
+- from a repo worktree, omit the path to summarize the current repo
+- from the control plane, pass an explicit repo or worktree path
+
+Purpose:
+- produce a compact handoff summary for one repo or worktree
+- avoid repeated broad discovery by repo-scoped agents
+
+Use it when:
+- a parent session is about to spawn repo explorers, implementers, or validators
+- you need path, branch, dirty state, package scripts, and local instruction presence
+
+Backed by:
+- `./bin/session-brief`
+
+Usage:
+- `/session-brief [repo-or-worktree-path]`
+
+Typical output:
+- path
+- branch
+- git status
+- package scripts
+- local `AGENTS.md` presence
 
 ### `/cross-impl`
+
+Session:
+- control-plane only
 
 Purpose:
 - split a product task into repo-scoped implementation work
@@ -138,6 +220,9 @@ Typical output:
 
 ### `/migration-audit`
 
+Session:
+- control-plane only
+
 Purpose:
 - audit migration boundaries between `dinah` and target repos
 - identify ownership, rollout, and cleanup risks
@@ -159,6 +244,9 @@ Typical output:
 - cleanup targets
 
 ### `/release-prepare`
+
+Session:
+- control-plane only
 
 Purpose:
 - coordinate release preparation for a service through the `ops` repo
@@ -189,32 +277,33 @@ Typical output:
 
 ### Starting repo work
 
-1. Use `/task-start` to create repo worktrees.
-2. Use `/task-map` when you need to confirm the canonical worktree path.
+1. In the control-plane session, use `/task-start` to create repo worktrees.
+2. In the control-plane session, use `/task-map` when you need to confirm the canonical worktree path.
 3. Open OpenCode in the target worktree for implementation.
 
 ### Cross-repo task
 
-1. Use `/cross-impl` to split the work by repo.
-2. Create one worktree per editable repo with `/task-start`.
-3. Keep one editing owner per repo worktree.
+1. In the control-plane session, use `/cross-impl` to split the work by repo.
+2. In the control-plane session, create one worktree per editable repo with `/task-start`.
+3. In repo worktree sessions, keep one editing owner per repo worktree.
 
 ### Migration task
 
-1. Use `/migration-audit` to map legacy and target ownership.
+1. In the control-plane session, use `/migration-audit` to map legacy and target ownership.
 2. Treat `dinah` as read-only.
-3. Push implementation into editable target repo worktrees only.
+3. Push implementation into editable target repo worktree sessions only.
 
 ### Release task
 
-1. Use `/compare` to inspect deployed vs target SHA.
-2. Use `/release-prepare` to create the isolated `ops` release worktree, commit the release, push the branch, and open the PR.
+1. In the control-plane session, use `/compare` to inspect deployed vs target SHA.
+2. In the control-plane session, use `/release-prepare` to create the isolated `ops` release worktree, commit the release, push the branch, and open the PR.
 3. Review the returned PR URL.
 
 ### Cleanup
 
-1. Use `/pr-comments` to gather review context if follow-up changes are needed.
-2. Use `/task-close` when the task worktree is ready to be removed.
+1. In either session, use `/pr-comments` to gather review context if follow-up changes are needed.
+2. In the repo worktree session, finish validation and make sure task state is durable.
+3. In the control-plane session, use `/task-close` when the task worktree is ready to be removed.
 
 ## Command Wiring Status
 
@@ -222,6 +311,7 @@ Script-backed commands:
 - `/compare` → `./bin/compare`
 - `/pr-comments` → `./bin/pr-comments`
 - `/release-prepare` → `./bin/release-prepare`
+- `/session-brief` → `./bin/session-brief`
 - `/task-close` → `./bin/cleanup-task`
 - `/task-map` → `./bin/worktree-map`
 - `/task-start` → `./bin/new-task`
@@ -238,6 +328,7 @@ Related helpers not currently exposed as slash commands:
 ## What Not To Do
 
 - Do not use the control-plane repo as the main implementation session.
+- Do not use an agent when a slash command only needs to run one deterministic script.
 - Do not edit application code directly in `repos/*`.
 - Do not perform release edits from app worktrees.
 - Do not run `/release-prepare` while `repos/ops` has unrelated dirty state.

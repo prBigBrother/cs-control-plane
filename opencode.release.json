@@ -38,7 +38,8 @@
   },
   "instructions": [
     "instructions/shared.md",
-    "instructions/engineering.md"
+    "instructions/engineering.md",
+    "instructions/releases.md"
   ],
   "watcher": {
     "ignore": [

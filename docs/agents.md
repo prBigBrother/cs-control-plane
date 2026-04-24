@@ -72,6 +72,27 @@ Typical output:
 - repo-local validation
 - ready-to-review delta
 
+### `repo-validator`
+
+Purpose:
+- validate one repo or one worktree without making edits
+- keep lint, typecheck, test, and smoke-check output outside the parent context
+
+Use it when:
+- implementation is complete and validation can run independently
+- multiple repos need validation in parallel
+- a parent session only needs pass/fail plus the first actionable failure
+
+Do not use it for:
+- editing files
+- broad investigation before the implementation scope is known
+
+Typical output:
+- commands run
+- pass/fail result
+- first actionable failure
+- suggested owner for follow-up
+
 ### `migration-auditor`
 
 Purpose:
@@ -125,8 +146,10 @@ Typical output:
 
 1. Use `orchestrator` to split the task by repo.
 2. Create one worktree per editable repo.
-3. Use one `repo-explorer` or `repo-implementer` per repo, not both editing the same repo at once.
-4. Bring results back together in the parent session.
+3. Use one `repo-explorer` per repo in parallel when boundaries are unclear.
+4. Use one `repo-implementer` per editable repo worktree once the edit scope is known.
+5. Use one `repo-validator` per changed repo when validation can run independently.
+6. Bring compact summaries back together in the parent session.
 
 ### Migration task
 
@@ -149,6 +172,7 @@ Typical output:
 - `/migration-audit` pairs with `migration-auditor`
 - `/compare` and `/release-prepare` pair with `release-manager`
 - `/pr-comments` is useful when reviewing or addressing PR feedback
+- `/session-brief` gives repo-scoped agents compact state before handoff
 - `/task-close` is for cleanup after repo-local work is finished
 
 ## What Not To Do
@@ -157,3 +181,4 @@ Typical output:
 - Do not let two editing sessions work in the same repo worktree.
 - Do not use `migration-auditor` as a general code search tool for non-migration tasks.
 - Do not perform release edits from app worktrees.
+- Do not delegate deterministic script-backed commands just to run a script.

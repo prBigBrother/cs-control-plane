@@ -1,9 +1,9 @@
 Compare the currently deployed SHA in `ops` against a target service SHA.
 
-Delegation:
-- Immediately use the `Task` tool to delegate to the `orchestrator` agent.
-- Pass the full slash-command invocation as the task prompt so the agent receives the original args unchanged.
-- Return the agent result directly.
+Fast path:
+- Do not delegate this command to an agent.
+- Parse the arguments locally, normalize `prod` to `production`, and run the script directly.
+- Return only the script output plus any actionable error.
 
 Usage:
 `/compare <service> <environment> [target-sha]`

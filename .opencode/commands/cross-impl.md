@@ -1,9 +1,10 @@
 Coordinate a cross-repo implementation task.
 
 Delegation:
-- Immediately use the `Task` tool to delegate to the `orchestrator` agent.
-- Pass the full slash-command invocation as the task prompt so the agent can coordinate repo explorers and repo implementers as needed.
-- Return the agent result directly.
+- Immediately delegate cross-repo planning to the `orchestrator` agent.
+- Pass the full slash-command invocation unchanged.
+- The orchestrator should fan out one repo-scoped subagent per repository when discovery or implementation can run independently.
+- The parent response should contain only the final repo plan, not raw subagent transcripts.
 
 Usage:
 `/cross-impl <eng-id> <goal>`
@@ -12,4 +13,4 @@ Rules:
 - Break the goal into repo-scoped tasks.
 - Keep one editing owner per repo.
 - Use repo explorers before repo implementers if boundaries are unclear.
-- Return a short repo-by-repo plan with worktree targets.
+- Return a short repo-by-repo plan with worktree targets, dependencies, and validation owners.

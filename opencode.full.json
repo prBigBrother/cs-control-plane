@@ -6,18 +6,18 @@
     "composio": {
       "type": "remote",
       "url": "https://connect.composio.dev/mcp",
-      "enabled": false
+      "enabled": true
     },
     "figma": {
       "type": "remote",
       "url": "https://mcp.figma.com/mcp",
-      "enabled": false,
+      "enabled": true,
       "oauth": {}
     },
     "slack": {
       "type": "remote",
       "url": "https://mcp.slack.com/mcp",
-      "enabled": false,
+      "enabled": true,
       "oauth": {
         "clientId": "3660753192626.8903469228982"
       }
@@ -25,12 +25,12 @@
     "tavily": {
       "type": "remote",
       "url": "https://mcp.tavily.com/mcp/?tavilyApiKey={env:TAVILY_API_KEY}",
-      "enabled": false
+      "enabled": true
     },
     "storyblok": {
       "type": "remote",
       "url": "https://mcp.labs.storyblok.com/mcp",
-      "enabled": false,
+      "enabled": true,
       "headers": {
         "Authorization": "Bearer {env:STORYBLOK_MCP_TOKEN}"
       }
@@ -38,7 +38,9 @@
   },
   "instructions": [
     "instructions/shared.md",
-    "instructions/engineering.md"
+    "instructions/engineering.md",
+    "instructions/migration.md",
+    "instructions/releases.md"
   ],
   "watcher": {
     "ignore": [
