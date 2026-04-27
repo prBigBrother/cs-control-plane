@@ -9,3 +9,5 @@ repos/*/dist
 repos/*/coverage
 worktrees/*
 !worktrees/.gitkeep
+tmp/*
+!tmp/.gitkeep

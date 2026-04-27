@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${OPENCHAMBER_PORT:-9999}"
+DOMAIN="${SLIM_OPENCODE_DOMAIN:-opencode.test}"
+SLIM_CONFIG="${SLIM_CONFIG:-$ROOT/.slim.yaml}"
+
+usage() {
+  echo "Usage: openchamber-slim <up|down|status>" >&2
+  exit "${1:-1}"
+}
+
+require_command() {
+  local command_name="$1"
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Error: missing required command: $command_name" >&2
+    exit 2
+  fi
+}
+
+openchamber_running_on_port() {
+  local status_output
+
+  status_output="$(openchamber status 2>/dev/null || true)"
+  if printf '%s\n' "$status_output" | grep -Eq "port[[:space:]]+$PORT|:$PORT([^0-9]|$)|127\\.0\\.0\\.1:$PORT|localhost:$PORT"; then
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -qi openchamber; then
+    return 0
+  fi
+
+  return 1
+}
+
+slim_ready() {
+  local list_output
+
+  list_output="$(slim list 2>/dev/null || true)"
+
+  if printf '%s\n' "$list_output" | grep -q "Proxy is not running"; then
+    return 1
+  fi
+
+  printf '%s\n' "$list_output" | awk -v domain="$DOMAIN" -v port="$PORT" '$1 == domain && $2 == port { found = 1 } END { exit found ? 0 : 1 }'
+}
+
+up() {
+  require_command openchamber
+  require_command slim
+
+  if openchamber_running_on_port; then
+    echo "OpenChamber already running on port $PORT"
+  else
+    if [ -z "${OPENCHAMBER_PASSWORD:-}" ]; then
+      echo "Error: OPENCHAMBER_PASSWORD is required to start OpenChamber" >&2
+      exit 3
+    fi
+
+    echo "Starting OpenChamber on port $PORT"
+    openchamber --port "$PORT" --ui-password "$OPENCHAMBER_PASSWORD"
+  fi
+
+  if slim_ready; then
+    echo "Slim already exposes $DOMAIN on port $PORT"
+  else
+    echo "Starting Slim services from $SLIM_CONFIG"
+    slim up --config "$SLIM_CONFIG"
+  fi
+}
+
+down() {
+  require_command openchamber
+  require_command slim
+
+  echo "Stopping OpenChamber"
+  openchamber stop || true
+
+  echo "Stopping Slim services from $SLIM_CONFIG"
+  slim down --config "$SLIM_CONFIG" || true
+}
+
+status() {
+  require_command openchamber
+  require_command slim
+
+  if openchamber_running_on_port; then
+    echo "OpenChamber: running on port $PORT"
+  else
+    echo "OpenChamber: not running on port $PORT"
+  fi
+
+  if slim_ready; then
+    echo "Slim: $DOMAIN -> $PORT is running"
+  else
+    echo "Slim: $DOMAIN -> $PORT is not ready"
+  fi
+}
+
+case "${1:-}" in
+  up) up ;;
+  down) down ;;
+  status) status ;;
+  -h|--help) usage 0 ;;
+  *) usage ;;
+esac

@@ -135,6 +135,24 @@ Check workspace health:
 
 This reports control-plane dirtiness, submodule pointer drift, worktree status, runtime link state, and installed agent counts.
 
+Start or stop the local OpenChamber + Slim route:
+
+```bash
+just up
+just status
+just down
+```
+
+Equivalent script calls:
+
+```bash
+OPENCHAMBER_PASSWORD=... ./bin/openchamber-slim up
+./bin/openchamber-slim status
+./bin/openchamber-slim down
+```
+
+`just up` loads root env config, starts OpenChamber on port `9999` when it is not already running there, then ensures Slim exposes `opencode.test` to port `9999` from `.slim.yaml`.
+
 Validate control-plane scripts and command docs:
 
 ```bash
