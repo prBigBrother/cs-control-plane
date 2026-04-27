@@ -1,1 +1,1 @@
-/Users/prbigbrother/Sites/citizenshipper/control-plane/.opencode/agent-packs/control-plane/auditor.md
+../agent-packs/control-plane/auditor.md

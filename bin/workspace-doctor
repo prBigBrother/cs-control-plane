@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+display_path() {
+  local path="$1"
+
+  case "$path" in
+    "$ROOT"/*) printf '%s\n' "${path#"$ROOT"/}" ;;
+    "$ROOT") printf '.\n' ;;
+    *) printf '%s\n' "$path" ;;
+  esac
+}
+
+status_line() {
+  local label="$1"
+  local state="$2"
+  local detail="${3:-}"
+
+  if [ -n "$detail" ]; then
+    printf '%s: %s - %s\n' "$label" "$state" "$detail"
+  else
+    printf '%s: %s\n' "$label" "$state"
+  fi
+}
+
+print_limited_status() {
+  local status_text="$1"
+  local limit="${2:-20}"
+  local total
+
+  total="$(printf '%s\n' "$status_text" | sed '/^$/d' | wc -l | tr -d ' ')"
+  printf '%s\n' "$status_text" | sed '/^$/d' | awk -v limit="$limit" 'NR <= limit { print "  " $0 }'
+  if [ "$total" -gt "$limit" ]; then
+    echo "  ... $((total - limit)) more"
+  fi
+}
+
+echo "Workspace Doctor"
+echo
+
+echo "Control plane:"
+if [ -n "$(git -C "$ROOT" status --short)" ]; then
+  status_line "- git status" "dirty"
+  git -C "$ROOT" status --short | sed 's/^/  /'
+else
+  status_line "- git status" "clean"
+fi
+
+echo
+echo "Submodules:"
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  prefix="${line:0:1}"
+  sha="$(printf '%s\n' "$line" | awk '{print $1}' | sed 's/^[+-]//')"
+  path="$(printf '%s\n' "$line" | awk '{print $2}')"
+
+  case "$prefix" in
+    " ")
+      state="clean"
+      ;;
+    "+")
+      state="pointer differs"
+      ;;
+    "-")
+      state="not initialized"
+      ;;
+    *)
+      state="dirty"
+      ;;
+  esac
+
+  status_line "- $path" "$state" "$sha"
+
+  if [ -d "$ROOT/$path" ] && git -C "$ROOT/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    nested_status="$(git -C "$ROOT/$path" status --short)"
+    if [ -n "$nested_status" ]; then
+      print_limited_status "$nested_status" 8
+    fi
+  fi
+done < <(git -C "$ROOT" submodule status --recursive 2>/dev/null || true)
+
+echo
+echo "Worktrees:"
+found_worktree=0
+while IFS= read -r git_file; do
+  worktree_path="$(dirname "$git_file")"
+  found_worktree=1
+  branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
+  dirty="$(git -C "$worktree_path" status --short 2>/dev/null || true)"
+  display="$(display_path "$worktree_path")"
+
+  if [ -n "$dirty" ]; then
+    status_line "- $display" "dirty" "${branch:-detached}"
+    print_limited_status "$dirty" 12
+  else
+    status_line "- $display" "clean" "${branch:-detached}"
+  fi
+
+  if [ -f "$worktree_path/package.json" ]; then
+    if [ -L "$worktree_path/node_modules" ]; then
+      echo "  node_modules: linked"
+    elif [ -d "$worktree_path/node_modules" ]; then
+      echo "  node_modules: local directory"
+    else
+      echo "  node_modules: missing"
+    fi
+  fi
+
+  agent_count=0
+  if [ -d "$worktree_path/.opencode/agents" ]; then
+    agent_count="$(find "$worktree_path/.opencode/agents" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')"
+  fi
+  echo "  agents: $agent_count"
+done < <(find "$ROOT/worktrees" -mindepth 3 -maxdepth 3 -name .git -type f 2>/dev/null | sort)
+
+if [ "$found_worktree" -eq 0 ]; then
+  echo "- none"
+fi
+
+echo
+echo "Control-plane agents:"
+if [ -d "$ROOT/.opencode/agents" ]; then
+  find "$ROOT/.opencode/agents" -maxdepth 1 -name '*.md' -print | sort | sed 's#.*/#- #; s#\.md$##'
+else
+  echo "- none"
+fi

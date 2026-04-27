@@ -10,6 +10,7 @@ Current deterministic helpers live in `bin/` and are exposed through slash comma
 - `bin/compare` via `/compare`
 - `bin/pr-comments` via `/pr-comments`
 - `bin/release-prepare` via `/release-prepare`
+- `bin/workspace-doctor` via `/workspace-status`
 
 Prefer these script-backed paths for repetitive work so agents do not spend tokens rediscovering basic repo state.
 

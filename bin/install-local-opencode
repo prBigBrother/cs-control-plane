@@ -11,6 +11,31 @@ PROFILE="${2:-engineering}"
 AGENT_PROFILE="${3:-repo}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+relative_link_target() {
+  local link_dir="$1"
+  local source_path="$2"
+
+  node -e '
+const path = require("node:path")
+const from = process.argv[1]
+const to = process.argv[2]
+const relative = path.relative(from, to) || "."
+console.log(relative.startsWith(".") ? relative : `./${relative}`)
+' "$link_dir" "$source_path"
+}
+
+link_relative() {
+  local source_path="$1"
+  local link_path="$2"
+  local link_dir
+  local relative_target
+
+  link_dir="$(dirname "$link_path")"
+  mkdir -p "$link_dir"
+  relative_target="$(relative_link_target "$link_dir" "$source_path")"
+  ln -sfn "$relative_target" "$link_path"
+}
+
 case "$PROFILE" in
   engineering) CONFIG="$ROOT/opencode.json" ;;
   migration) CONFIG="$ROOT/opencode.migration.json" ;;
@@ -56,9 +81,12 @@ case "$GIT_DIR" in
   *) GIT_DIR="$TARGET/$GIT_DIR" ;;
 esac
 
-if mkdir -p "$GIT_DIR/info" 2>/dev/null && touch "$GIT_DIR/info/exclude" 2>/dev/null; then
+if mkdir -p "$GIT_DIR/info" 2>/dev/null && { [ -e "$GIT_DIR/info/exclude" ] || touch "$GIT_DIR/info/exclude" 2>/dev/null; }; then
   for entry in "/opencode.json" "/.opencode"; do
     if ! grep -qxF "$entry" "$GIT_DIR/info/exclude"; then
+      if [ ! -w "$GIT_DIR/info/exclude" ]; then
+        break
+      fi
       printf "%s\n" "$entry" >> "$GIT_DIR/info/exclude"
     fi
   done
@@ -76,12 +104,12 @@ install_agent_pack() {
 
   while IFS= read -r agent_file; do
     [ -n "$agent_file" ] || continue
-    ln -sfn "$agent_file" "$TARGET/.opencode/agents/$(basename "$agent_file")"
+    link_relative "$agent_file" "$TARGET/.opencode/agents/$(basename "$agent_file")"
   done < <(find "$pack_dir" -maxdepth 1 -type f -name '*.md' | sort)
 }
 
 if [ "$CONFIG" != "$TARGET/opencode.json" ]; then
-  ln -sfn "$CONFIG" "$TARGET/opencode.json"
+  link_relative "$CONFIG" "$TARGET/opencode.json"
 fi
 
 if [ -L "$TARGET/.opencode" ]; then
@@ -91,8 +119,8 @@ fi
 mkdir -p "$TARGET/.opencode/agents"
 
 if [ "$TARGET" != "$ROOT" ]; then
-  ln -sfn "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
-  ln -sfn "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
+  link_relative "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
+  link_relative "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
 fi
 
 find "$TARGET/.opencode/agents" -maxdepth 1 \( -type l -o -type f \) -name '*.md' -delete

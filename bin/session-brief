@@ -31,18 +31,91 @@ case "$TARGET" in
 esac
 
 echo "Path: $DISPLAY_PATH"
-echo "Branch: $(git -C "$TARGET" branch --show-current 2>/dev/null || true)"
+BRANCH="$(git -C "$TARGET" branch --show-current 2>/dev/null || true)"
+echo "Branch: $BRANCH"
 echo
 echo "Git status:"
 git -C "$TARGET" status --short
+
+if git -C "$TARGET" rev-parse --verify origin/main >/dev/null 2>&1; then
+  echo
+  echo "Commits since origin/main:"
+  if git -C "$TARGET" log --oneline --max-count=8 origin/main..HEAD | grep -q .; then
+    git -C "$TARGET" log --oneline --max-count=8 origin/main..HEAD
+  else
+    echo "- none"
+  fi
+
+  echo
+  echo "Changed files since origin/main:"
+  if git -C "$TARGET" diff --name-only origin/main...HEAD | grep -q .; then
+    git -C "$TARGET" diff --name-only origin/main...HEAD | sed 's/^/- /'
+  else
+    echo "- none"
+  fi
+fi
 
 if [ -f "$TARGET/package.json" ]; then
   echo
   echo "Package scripts:"
   node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); for (const name of Object.keys(p.scripts || {}).sort()) console.log(`- ${name}`)' "$TARGET/package.json"
+
+  echo
+  echo "Likely validation commands:"
+  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const names = Object.keys(p.scripts || {}).filter((name) => /^(lint|typecheck|test|build)(:|$)/.test(name)).sort(); if (!names.length) console.log("- none detected"); for (const name of names) console.log(`- npm run ${name}`)' "$TARGET/package.json"
+
+  echo
+  echo "Runtime links:"
+  if [ -L "$TARGET/node_modules" ]; then
+    echo "- node_modules: linked"
+  elif [ -d "$TARGET/node_modules" ]; then
+    echo "- node_modules: local directory"
+  else
+    echo "- node_modules: missing"
+  fi
+fi
+
+env_count=0
+for env_file in "$TARGET"/.env*; do
+  [ -e "$env_file" ] || [ -L "$env_file" ] || continue
+  env_count=$((env_count + 1))
+done
+
+echo
+echo "Env files:"
+if [ "$env_count" -eq 0 ]; then
+  echo "- none"
+else
+  for env_file in "$TARGET"/.env*; do
+    [ -e "$env_file" ] || [ -L "$env_file" ] || continue
+    if [ -L "$env_file" ]; then
+      echo "- $(basename "$env_file"): linked"
+    else
+      echo "- $(basename "$env_file"): local"
+    fi
+  done
+fi
+
+if command -v gh >/dev/null 2>&1 && [ -n "$BRANCH" ]; then
+  REMOTE_URL="$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)"
+  REPO_SLUG="$(printf '%s\n' "$REMOTE_URL" | sed -E 's#^git@github.com:##; s#^https://github.com/##; s#\.git$##')"
+  if [ -n "$REPO_SLUG" ] && [ "$REPO_SLUG" != "$REMOTE_URL" ] && gh auth status >/dev/null 2>&1; then
+    PR_URL="$(gh pr list --repo "$REPO_SLUG" --head "$BRANCH" --state open --json url --jq '.[0].url // ""' 2>/dev/null || true)"
+    echo
+    echo "Open PR:"
+    if [ -n "$PR_URL" ]; then
+      echo "- $PR_URL"
+    else
+      echo "- none"
+    fi
+  fi
 fi
 
 if [ -f "$TARGET/AGENTS.md" ]; then
   echo
   echo "Local AGENTS.md: present"
+  if grep -E '^#' "$TARGET/AGENTS.md" >/dev/null 2>&1; then
+    echo "AGENTS headings:"
+    grep -E '^#{1,3} ' "$TARGET/AGENTS.md" | head -8 | sed 's/^/- /'
+  fi
 fi

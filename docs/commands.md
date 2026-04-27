@@ -22,6 +22,7 @@ Run these from the control-plane repo root because they create, remove, coordina
 - `/migration-audit`
 - `/compare`
 - `/release-prepare`
+- `/workspace-status`
 
 ### Repo worktree session
 
@@ -76,6 +77,7 @@ Typical output:
 Important behavior:
 - rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and `node_modules` links when source assets exist in the base checkout
 - slug is optional; when omitted, an existing matching worktree is reused if there is exactly one match, otherwise new worktrees use the fallback slug `task`
+- new worktrees are created from `origin/main` without checking out or pulling the base repo under `repos/*`
 - worktrees receive the repo agent set: Explorer, Implementer, and Validator
 - if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
 
@@ -132,6 +134,7 @@ Typical output:
 
 Important behavior:
 - slug is optional only when exactly one worktree exists for the repo and ENG id
+- branch deletion uses the actual worktree branch when the worktree still exists, so cleanup works for `feature`, `bug`, `hotfix`, and `release` branches without requiring the type
 
 ### `/compare`
 
@@ -250,8 +253,40 @@ Typical output:
 - path
 - branch
 - git status
+- recent commits since `origin/main`
+- changed files since `origin/main`
 - package scripts
+- likely validation commands
+- runtime link and env-file status
+- open PR URL when available
 - local `AGENTS.md` presence
+
+### `/workspace-status`
+
+Session:
+- control-plane only
+
+Purpose:
+- report workspace health without a broad agent investigation
+- identify dirty control-plane files, submodule pointer drift, dirty worktrees, missing runtime links, and installed agent counts
+
+Use it when:
+- before starting or closing worktrees
+- after submodule pointer drift appears in `git status`
+- before committing control-plane changes
+
+Backed by:
+- `./bin/workspace-doctor`
+
+Usage:
+- `/workspace-status`
+
+Typical output:
+- control-plane git status
+- submodule clean/drift status
+- repo worktree dirty state
+- `node_modules` link status
+- active control-plane agents
 
 ### `/cross-impl`
 
@@ -375,6 +410,7 @@ Script-backed commands:
 - `/task-close` → `./bin/cleanup-task`
 - `/task-map` → `./bin/worktree-map`
 - `/task-start` → `./bin/new-task`
+- `/workspace-status` → `./bin/workspace-doctor`
 
 Prompt-only commands:
 - `/cross-impl`
@@ -383,6 +419,7 @@ Prompt-only commands:
 Related helpers not currently exposed as slash commands:
 - `./bin/new-release`
 - `./bin/release-pr-body`
+- `./bin/validate-control-plane`
 - `./bin/repo-profile`
 
 ## What Not To Do

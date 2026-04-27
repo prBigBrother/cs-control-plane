@@ -63,6 +63,8 @@ Rerunning `bin/new-task` for an existing worktree repairs these links and reinst
 
 The slug is optional for task helpers. When omitted, existing worktrees are resolved by `ENG-<id>` if there is exactly one match.
 
+`bin/new-task` fetches `origin/main` and creates new worktrees from that remote ref without checking out or pulling the base submodule worktree. This keeps `repos/*` from drifting just because a task was started.
+
 Tracked env files already present in the worktree are left as-is; untracked local env files are symlinked from the base repo checkout.
 
 Release helpers:
@@ -123,6 +125,20 @@ Create a compact handoff brief for agents:
 
 ```bash
 ./bin/session-brief worktrees/icarus/ENG-123-checkout-redesign
+```
+
+Check workspace health:
+
+```bash
+./bin/workspace-doctor
+```
+
+This reports control-plane dirtiness, submodule pointer drift, worktree status, runtime link state, and installed agent counts.
+
+Validate control-plane scripts and command docs:
+
+```bash
+./bin/validate-control-plane
 ```
 
 Create an app repo PR from a committed worktree branch:

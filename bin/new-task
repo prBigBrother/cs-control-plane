@@ -103,9 +103,8 @@ if [ ! -e "$REPO_PATH/.git" ]; then
 fi
 
 mkdir -p "$ROOT/worktrees/$REPO"
-git -C "$REPO_PATH" fetch origin
-git -C "$REPO_PATH" checkout main
-git -C "$REPO_PATH" pull --ff-only origin main
+git -C "$REPO_PATH" fetch origin main:refs/remotes/origin/main
+BASE_REF="origin/main"
 
 if [ -f "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH" ]; then
   link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
@@ -114,7 +113,7 @@ if [ -f "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTR
   exit 0
 fi
 
-git -C "$REPO_PATH" worktree add -b "$BRANCH" "$WORKTREE_PATH" main
+git -C "$REPO_PATH" worktree add -b "$BRANCH" "$WORKTREE_PATH" "$BASE_REF"
 
 if [ -f "$REPO_PATH/AGENTS.md" ]; then
   cp "$REPO_PATH/AGENTS.md" "$WORKTREE_PATH/AGENTS.md"

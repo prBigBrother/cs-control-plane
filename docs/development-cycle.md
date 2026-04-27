@@ -23,6 +23,7 @@ Use:
 - no agent for simple single-repo tasks with obvious scope
 
 Commands:
+- `/workspace-status` when current workspace state is unclear
 - `/cross-impl <eng-id> <goal>` for multi-repo planning
 - `/migration-audit <feature-area>` for Dinah-to-target migration analysis
 - `/task-map <repo> <eng-id> [slug]` when you need to confirm a canonical worktree path
@@ -49,6 +50,7 @@ Use:
 
 Commands:
 - `/task-start <repo...> <eng-id> [slug] [type]`
+- `/workspace-status` after setup if submodule or runtime link state looks wrong
 
 Equivalent script:
 
@@ -64,7 +66,8 @@ Output:
 
 Rules:
 - Create worktrees from base checkouts under `repos/*`.
-- Keep base submodule checkouts aligned to `main`.
+- Create task worktrees from `origin/main` without moving the base submodule checkout.
+- Keep base submodule checkouts clean.
 - Open a separate OpenCode session in each repo worktree that will be edited.
 
 ## 3. Investigation
@@ -303,6 +306,7 @@ Use:
 
 Commands:
 - `/task-close <repo> <eng-id> [slug]`
+- `/workspace-status` after cleanup when you want to confirm no worktree or submodule drift remains
 
 Rules:
 - Close worktrees only after PRs are merged or the branch is no longer needed.

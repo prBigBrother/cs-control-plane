@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "Shell syntax:"
+while IFS= read -r script; do
+  [ -n "$script" ] || continue
+  if ! head -n 1 "$script" | grep -Eq 'bash|sh'; then
+    continue
+  fi
+  bash -n "$script"
+  printf '%s\n' "- ${script#"$ROOT"/}"
+done < <(find "$ROOT/bin" "$ROOT/lib" -maxdepth 1 -type f | sort)
+
+echo
+echo "Command docs coverage:"
+missing=0
+while IFS= read -r command_file; do
+  command_name="/$(basename "$command_file" .md)"
+  if grep -qF "$command_name" "$ROOT/docs/commands.md"; then
+    printf '%s\n' "- $command_name"
+  else
+    printf 'Missing from docs/commands.md: %s\n' "$command_name" >&2
+    missing=1
+  fi
+done < <(find "$ROOT/.opencode/commands" -maxdepth 1 -type f -name '*.md' | sort)
+
+if [ "$missing" -ne 0 ]; then
+  exit 1
+fi

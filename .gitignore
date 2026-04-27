@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.envrc
 .opencode-state/
 repos/*/.env
 repos/*/node_modules
