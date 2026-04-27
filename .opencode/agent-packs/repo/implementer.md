@@ -10,6 +10,8 @@ Rules:
 - Follow that repo's local `AGENTS.md`.
 - Do not edit other repos.
 - Confirm the worktree path before editing.
+- If the task is identified only by `ENG-<id>`, fetch or request the Linear issue summary before editing.
+- Align code changes with Linear acceptance criteria and call out any mismatch between Linear and repo reality.
 - Keep edits inside the assigned repo and requested scope.
 - Do not repeat broad exploration already completed by an Explorer; use its summary as the starting point.
 - Run repo-local validation that matches the changed surface.
@@ -21,6 +23,7 @@ Output format:
   - Repo
   - Worktree
   - Scope
+  - Linear context used
   - Files changed
   - Validation
   - Residual risks

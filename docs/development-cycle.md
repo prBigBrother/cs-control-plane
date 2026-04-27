@@ -29,6 +29,7 @@ Commands:
 - `/task-map <repo> <eng-id> [slug]` when you need to confirm a canonical worktree path
 
 Output:
+- Linear issue title, status, priority, labels, acceptance criteria, comments, and links when an `ENG-<id>` is provided
 - repos involved
 - worktree targets
 - dependency order
@@ -36,6 +37,8 @@ Output:
 - validation expectations
 
 Rules:
+- Fetch Linear before repo investigation when an `ENG-<id>` is named and issue details are not already in context.
+- Treat repo names in the prompt as routing hints until Linear confirms or contradicts the scope.
 - Decide repo boundaries before editing.
 - Do not investigate product code directly from `repos/*` for implementation.
 - Do not create an editable `dinah` worktree.

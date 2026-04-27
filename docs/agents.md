@@ -7,6 +7,7 @@ This document explains the current shared agents in the control plane and when t
 - Open OpenCode in the target repo worktree for implementation.
 - Use the control plane only for shared orchestration, release helpers, and cross-repo coordination.
 - One editable repo gets one owner at a time.
+- When a prompt names an `ENG-<id>` task without issue details, resolve the Linear issue before repo investigation or implementation.
 
 ## Agent List
 
@@ -47,6 +48,7 @@ Do not use it for:
 - deep repo-local investigation when only one repo is involved
 
 Typical output:
+- Linear task summary
 - repo-by-repo work split
 - worktree targets
 - ownership boundaries
@@ -71,6 +73,7 @@ Do not use it for:
 - cross-repo planning
 
 Typical output:
+- Linear context used
 - touched files
 - important entry points
 - risk list

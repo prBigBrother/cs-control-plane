@@ -2,6 +2,8 @@
 
 - Branch format: `<feature|bug|hotfix|release>/ENG-<id>/<slug>`
 - Worktree path format: `worktrees/<repo>/ENG-<id>-<slug>/`
+- Before implementing a prompt that names an `ENG-<id>` task, fetch the matching Linear issue unless the issue details are already in the active context.
+- Derive implementation scope, slug, PR wording, and validation expectations from Linear first, then verify them against the repo.
 - Task helper commands may omit slug when exactly one matching worktree exists for the repo and ENG id.
 - Base submodule checkouts in `repos/*` should stay clean and aligned to `main`.
 - Task setup should fetch `origin/main` without checking out or pulling base submodule worktrees.
