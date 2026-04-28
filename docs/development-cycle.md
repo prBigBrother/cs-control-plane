@@ -189,13 +189,14 @@ Commands:
 
 Generated PR content includes:
 - mandatory title prefix: `ENG-<id>:`
-- summary from commits since `origin/main`
+- summary from Linear task context plus proposed changes from commits and changed files
 - changed files since `origin/main`
 - validation checklist
 - rollout notes placeholder
 
 Rules:
 - Create one PR per repo worktree.
+- Fetch or reuse Linear task context before `/pr-create` so the generated summary describes both the task and the implementation.
 - Make cross-repo dependencies explicit in each PR.
 - For migration tasks, include Phase 1 or Phase 2 status and flags.
 - Update the generated validation checklist before marking a draft PR ready for review.

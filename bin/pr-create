@@ -199,12 +199,57 @@ trap 'rm -f "$BODY_FILE"' EXIT
 git -C "$TARGET_PATH" fetch origin main >/dev/null 2>&1
 BASE_REF="origin/main"
 
+clean_summary_text() {
+  sed -E 's/\r$//; s/^#+[[:space:]]*//; s/^\[[ xX]\][[:space:]]*//; s/^[-*][[:space:]]*//; s/`//g; s/[[:space:]]+/ /g; s/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+first_summary_line() {
+  printf '%s\n' "$1" | clean_summary_text | awk 'length($0) > 0 { print; exit }'
+}
+
+join_lines() {
+  awk 'length($0) > 0 { items[++count] = $0 } END { for (i = 1; i <= count; i++) printf "%s%s", items[i], (i < count ? "; " : "") }'
+}
+
+TASK_SUMMARY="$(first_summary_line "${PR_TASK_DESCRIPTION:-}")"
+if [ -z "$TASK_SUMMARY" ]; then
+  TASK_SUMMARY="$(first_summary_line "${PR_TASK_TITLE:-}")"
+fi
+if [ -z "$TASK_SUMMARY" ]; then
+  TASK_SUMMARY="$TITLE_DETAIL"
+fi
+
+CHANGE_SUMMARY="$(
+  git -C "$TARGET_PATH" log --reverse --pretty='format:%s' "$BASE_REF"..HEAD |
+    sed -E "s/^$TASK_ID[ :_-]+//" |
+    clean_summary_text |
+    head -3 |
+    join_lines
+)"
+
+if [ -z "$CHANGE_SUMMARY" ]; then
+  CHANGE_SUMMARY="$(
+    git -C "$TARGET_PATH" diff --name-only "$BASE_REF"...HEAD |
+      head -4 |
+      sed 's#^#updates #' |
+      join_lines
+  )"
+fi
+
+if [ -z "$CHANGE_SUMMARY" ]; then
+  CHANGE_SUMMARY="prepares the requested task changes"
+fi
+
 {
   echo "## Summary"
-  while IFS= read -r commit_subject; do
-    [ -n "$commit_subject" ] || continue
-    echo "- $commit_subject"
-  done < <(git -C "$TARGET_PATH" log --reverse --pretty='format:%s' "$BASE_REF"..HEAD)
+  echo "- $TASK_SUMMARY"
+  echo "- Proposed changes: $CHANGE_SUMMARY"
+
+  if [ -n "${PR_TASK_ACCEPTANCE:-}" ]; then
+    echo
+    echo "## Task Acceptance Criteria"
+    printf '%s\n' "$PR_TASK_ACCEPTANCE" | clean_summary_text | awk 'length($0) > 0 { print "- " $0 }'
+  fi
 
   echo
   echo "## Changed Files"

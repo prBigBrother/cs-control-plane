@@ -2,9 +2,11 @@ Create a GitHub pull request for a repo worktree branch.
 
 Fast path:
 - Do not delegate this command to an agent.
+- If an `ENG-<id>` is known and Linear issue details are not already in context, fetch the Linear issue before running the script.
+- Pass the Linear title, short description, and acceptance criteria to the script through `PR_TASK_TITLE`, `PR_TASK_DESCRIPTION`, and `PR_TASK_ACCEPTANCE` environment variables when available.
 - Run the script directly after the repo worktree has committed changes and passed validation.
 - Default to a draft PR unless `ready` is explicitly requested.
-- Generate the PR title and description from the task id, commits, and changed files.
+- Generate the PR title and description from the task id, Linear task context, commits, and changed files.
 - The PR title must start with `ENG-<id>:`. If no task id can be inferred, fail instead of creating a PR.
 
 Usage:
@@ -23,7 +25,7 @@ Rules:
 - Refuse to create a PR from `main`.
 - Refuse dirty worktrees so uncommitted work is not left behind.
 - Generate the PR title as `ENG-<id>: <latest commit subject or task slug>`.
-- Generate the PR body with summary, changed files, validation checklist, and rollout notes.
+- Generate the PR body with a non-empty summary that combines task context and proposed changes, changed files, validation checklist, and rollout notes.
 - If an open PR already exists for the current branch, return that PR URL.
 - Use `/release-prepare`, not `/pr-create`, for ops release tag updates.
 

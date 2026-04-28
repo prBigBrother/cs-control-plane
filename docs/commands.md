@@ -197,6 +197,7 @@ Purpose:
 - push the current task branch
 - create a GitHub pull request
 - generate a mandatory task-prefixed PR title and description
+- combine Linear task context and proposed code changes into a short non-empty PR summary
 - return the existing PR URL when one already exists for the branch
 
 Use it when:
@@ -223,7 +224,9 @@ Important behavior:
 - defaults to `draft`
 - requires a task id that can be inferred from args, branch, or worktree path
 - generates the PR title as `ENG-<id>: <latest commit subject or task slug>`
-- generates the PR body with summary, changed files, validation checklist, and rollout notes
+- fetches Linear context before running when issue details are not already present in context
+- passes Linear title, description, and acceptance criteria to the script when available
+- generates the PR body with a short summary that mixes task context with proposed changes, changed files, validation checklist, and rollout notes
 - refuses dirty worktrees
 - refuses to create a PR from `main`
 - use `/release-prepare`, not `/pr-create`, for ops release tag updates
