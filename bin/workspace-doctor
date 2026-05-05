@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+doctor_failed=0
 
 display_path() {
   local path="$1"
@@ -42,15 +43,25 @@ echo "Workspace Doctor"
 echo
 
 echo "Control plane:"
-if [ -n "$(git -C "$ROOT" status --short)" ]; then
+control_status=""
+if ! control_status="$(git -C "$ROOT" status --short 2>&1)"; then
+  status_line "- git status" "broken" "$control_status"
+  doctor_failed=1
+elif [ -n "$control_status" ]; then
   status_line "- git status" "dirty"
-  git -C "$ROOT" status --short | sed 's/^/  /'
+  printf '%s\n' "$control_status" | sed 's/^/  /'
 else
   status_line "- git status" "clean"
 fi
 
 echo
 echo "Submodules:"
+submodule_status=""
+if ! submodule_status="$(git -C "$ROOT" submodule status --recursive 2>&1)"; then
+  status_line "- submodule status" "broken" "$submodule_status"
+  doctor_failed=1
+fi
+
 while IFS= read -r line; do
   [ -n "$line" ] || continue
   prefix="${line:0:1}"
@@ -74,13 +85,24 @@ while IFS= read -r line; do
 
   status_line "- $path" "$state" "$sha"
 
-  if [ -d "$ROOT/$path" ] && git -C "$ROOT/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    nested_status="$(git -C "$ROOT/$path" status --short)"
-    if [ -n "$nested_status" ]; then
-      print_limited_status "$nested_status" 8
+  if [ -d "$ROOT/$path" ]; then
+    if [ -d "$ROOT/$path/.git" ]; then
+      status_line "  gitdir layout" "embedded" "expected absorbed submodule gitfile"
+    fi
+
+    if git -C "$ROOT/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      if ! nested_status="$(git -C "$ROOT/$path" status --short 2>&1)"; then
+        status_line "  nested git status" "broken" "$nested_status"
+        doctor_failed=1
+      elif [ -n "$nested_status" ]; then
+        print_limited_status "$nested_status" 8
+      fi
+    else
+      status_line "  nested git status" "broken" "not a git worktree"
+      doctor_failed=1
     fi
   fi
-done < <(git -C "$ROOT" submodule status --recursive 2>/dev/null || true)
+done <<< "$submodule_status"
 
 echo
 echo "Worktrees:"
@@ -89,8 +111,13 @@ while IFS= read -r git_file; do
   worktree_path="$(dirname "$git_file")"
   found_worktree=1
   branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
-  dirty="$(git -C "$worktree_path" status --short 2>/dev/null || true)"
   display="$(display_path "$worktree_path")"
+
+  if ! dirty="$(git -C "$worktree_path" status --short 2>&1)"; then
+    status_line "- $display" "broken" "$dirty"
+    doctor_failed=1
+    continue
+  fi
 
   if [ -n "$dirty" ]; then
     status_line "- $display" "dirty" "${branch:-detached}"
@@ -127,3 +154,5 @@ if [ -d "$ROOT/.opencode/agents" ]; then
 else
   echo "- none"
 fi
+
+exit "$doctor_failed"
