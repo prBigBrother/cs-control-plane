@@ -16,7 +16,8 @@ SERVICE=$1
 NEW_SHA=$2
 ENVIRONMENT=both
 OLD_SHA=${4:-}
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=../lib/release-common.sh
 source "$ROOT/lib/release-common.sh"

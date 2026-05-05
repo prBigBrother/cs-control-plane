@@ -9,7 +9,8 @@ fi
 TARGET_INPUT="$1"
 PROFILE="${2:-engineering}"
 AGENT_PROFILE="${3:-repo}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 relative_link_target() {
   local link_dir="$1"
@@ -119,6 +120,7 @@ fi
 mkdir -p "$TARGET/.opencode/agents"
 
 if [ "$TARGET" != "$ROOT" ]; then
+  link_relative "$ROOT/bin" "$TARGET/.opencode/bin"
   link_relative "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
   link_relative "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
 fi

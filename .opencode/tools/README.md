@@ -9,6 +9,7 @@ Current deterministic helpers live in `bin/` and are exposed through slash comma
 - `bin/cleanup-task` via `/task-close`
 - `bin/compare` via `/compare`
 - `bin/pr-comments` via `/pr-comments`
+- `bin/pr-review` via `/pr-review`
 - `bin/release-prepare` via `/release-prepare`
 - `bin/workspace-doctor` via `/workspace-status`
 

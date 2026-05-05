@@ -6,12 +6,19 @@ if [ "$#" -gt 1 ]; then
   exit 1
 fi
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_INPUT="${1:-.}"
 
 case "$TARGET_INPUT" in
   /*) TARGET="$TARGET_INPUT" ;;
-  *) TARGET="$ROOT/$TARGET_INPUT" ;;
+  *)
+    if [ -d "$TARGET_INPUT" ]; then
+      TARGET="$(cd "$TARGET_INPUT" && pwd)"
+    else
+      TARGET="$ROOT/$TARGET_INPUT"
+    fi
+    ;;
 esac
 
 if [ ! -d "$TARGET" ]; then

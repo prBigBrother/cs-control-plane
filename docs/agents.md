@@ -214,6 +214,7 @@ Agent id:
 - `/migration-audit` pairs with `auditor`
 - `/compare` and `/release-prepare` pair with `release`
 - `/pr-comments` is useful when reviewing or addressing PR feedback
+- `/pr-review` performs a formal qualified PR review with severity-based approval or change request
 - `/session-brief` gives repo-scoped agents compact state before handoff
 - `/workspace-status` checks shared workspace health before or after orchestration
 - `/task-close` is for cleanup after repo-local work is finished

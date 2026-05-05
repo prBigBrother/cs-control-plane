@@ -21,7 +21,8 @@ Session:
 - control plane with explicit `repo eng-id slug`
 
 Rules:
-- Run `./bin/pr-create [worktree-path] [draft|ready]`, `./bin/pr-create [repo eng-id] [draft|ready]`, or `./bin/pr-create [repo eng-id slug] [draft|ready]`.
+- From a repo worktree, run `./.opencode/bin/pr-create [draft|ready]`.
+- From the control plane, run `./bin/pr-create [worktree-path] [draft|ready]`, `./bin/pr-create [repo eng-id] [draft|ready]`, or `./bin/pr-create [repo eng-id slug] [draft|ready]`.
 - Refuse to create a PR from `main`.
 - Refuse dirty worktrees so uncommitted work is not left behind.
 - Generate the PR title as `ENG-<id>: <latest commit subject or task slug>`.

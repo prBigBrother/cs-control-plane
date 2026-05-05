@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PORT="${OPENCHAMBER_PORT:-9999}"
 DOMAIN="${SLIM_OPENCODE_DOMAIN:-opencode.test}"
 SLIM_CONFIG="${SLIM_CONFIG:-$ROOT/.slim.yaml}"

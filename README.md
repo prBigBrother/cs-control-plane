@@ -101,6 +101,8 @@ Agent visibility is installed separately:
 - `control-plane`: Manager, Auditor, Release
 - `full`: all project agents
 
+Repo and worktree sessions also receive the shared helper scripts at `./.opencode/bin`, so slash commands can run deterministic helpers without locating the control-plane checkout.
+
 Use the third argument to choose an agent set explicitly:
 
 ```bash
@@ -164,6 +166,15 @@ Create an app repo PR from a committed worktree branch:
 ```bash
 ./bin/pr-create worktrees/icarus/ENG-123-checkout-redesign
 ```
+
+Review a GitHub pull request:
+
+```bash
+./bin/pr-review collect https://github.com/owner/repo/pull/123
+./bin/pr-review submit https://github.com/owner/repo/pull/123 tmp/pr-review-owner-repo-123/findings.json
+```
+
+The shared `/pr-review <pr-url>` command wraps this flow, classifies findings as critical, medium, or light, and refuses to post comments or reviews on your own PRs.
 
 ## OpenCode Session Model
 

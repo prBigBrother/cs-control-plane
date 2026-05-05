@@ -39,6 +39,7 @@ Run these from `worktrees/<repo>/ENG-<id>-<slug>/` while doing repo-local implem
 These are safe in either place when the target repo/path is explicit:
 
 - `/pr-comments <repo> <pr-number>`
+- `/pr-review <pr-url>`
 - `/session-brief [repo-or-worktree-path]`
 - `/pr-create [worktree-path] [draft|ready]`
 - `/pr-create [repo eng-id] [draft|ready]`
@@ -176,6 +177,7 @@ Use it when:
 
 Backed by:
 - `./bin/pr-comments`
+- repo sessions receive this helper as `./.opencode/bin/pr-comments`
 
 Usage:
 - `/pr-comments <repo> <pr-number>`
@@ -184,6 +186,43 @@ Typical output:
 - PR metadata
 - compact actionable review summary by default
 - full PR description, issue comments, and review comments only when requested
+
+### `/pr-review`
+
+Session:
+- either session when the PR URL is explicit
+
+Purpose:
+- perform a qualified review of any GitHub pull request
+- classify findings as critical, medium, or light
+- post code review comments and the final review outcome for someone else's PR
+- output findings only when the PR belongs to the current GitHub user
+
+Use it when:
+- you need to review your own PR without posting comments
+- you need to review someone else's PR and leave a formal GitHub review
+- you need consistent severity and approval/change-request behavior
+
+Backed by:
+- `./bin/pr-review`
+- repo sessions receive this helper as `./.opencode/bin/pr-review`
+
+Usage:
+- `/pr-review <pr-url>`
+
+Typical output:
+- review packet path under `tmp/`
+- findings by severity
+- submitted review outcome, unless the PR is yours
+
+Important behavior:
+- collects PR metadata, files, comments, reviews, and diff with `gh`
+- formats review comment severity/title as bold Markdown
+- includes a short suggested solution for actionable findings when available
+- all security issues are critical
+- critical or medium findings produce a change-request review
+- only light findings, or no findings, produce an approval review
+- own PRs never receive comments, approvals, or change requests from the command
 
 ### `/pr-create`
 
@@ -207,6 +246,7 @@ Use it when:
 
 Backed by:
 - `./bin/pr-create`
+- repo sessions receive this helper as `./.opencode/bin/pr-create`
 
 Usage:
 - `/pr-create [worktree-path] [draft|ready]`
@@ -222,6 +262,7 @@ Typical output:
 
 Important behavior:
 - defaults to `draft`
+- repo worktree sessions should run `./.opencode/bin/pr-create [draft|ready]` instead of locating the control-plane checkout
 - requires a task id that can be inferred from args, branch, or worktree path
 - generates the PR title as `ENG-<id>: <latest commit subject or task slug>`
 - fetches Linear context before running when issue details are not already present in context
@@ -248,6 +289,7 @@ Use it when:
 
 Backed by:
 - `./bin/session-brief`
+- repo sessions receive this helper as `./.opencode/bin/session-brief`
 
 Usage:
 - `/session-brief [repo-or-worktree-path]`
@@ -408,12 +450,19 @@ Script-backed commands:
 - `/compare` → `./bin/compare`
 - `/pr-create` → `./bin/pr-create`
 - `/pr-comments` → `./bin/pr-comments`
+- `/pr-review` → `./bin/pr-review`
 - `/release-prepare` → `./bin/release-prepare`
 - `/session-brief` → `./bin/session-brief`
 - `/task-close` → `./bin/cleanup-task`
 - `/task-map` → `./bin/worktree-map`
 - `/task-start` → `./bin/new-task`
 - `/workspace-status` → `./bin/workspace-doctor`
+
+Repo-session helper paths:
+- `/pr-create` → `./.opencode/bin/pr-create`
+- `/pr-comments` → `./.opencode/bin/pr-comments`
+- `/pr-review` → `./.opencode/bin/pr-review`
+- `/session-brief` → `./.opencode/bin/session-brief`
 
 Prompt-only commands:
 - `/cross-impl`

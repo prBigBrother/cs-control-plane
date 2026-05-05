@@ -210,12 +210,14 @@ Session:
 
 Use:
 - `/pr-comments <repo> <pr-number>` to gather review context
+- `/pr-review <pr-url>` to perform a qualified formal review with severity-based outcome
 - `explorer` if a comment requires investigation
 - `implementer` for code fixes
 - `validator` after fixes
 
 Commands:
 - `/pr-comments <repo> <pr-number>`
+- `/pr-review <pr-url>`
 - repo-local validation commands
 - repo-local commit/push commands
 
@@ -225,6 +227,8 @@ Output:
 - validation status after fixes
 
 Rules:
+- Use `/pr-review` for formal PR reviews. If the PR is yours, output findings only and do not comment, approve, or request changes.
+- Treat all security issues as critical.
 - Fix comments in the same repo worktree that owns the PR.
 - Keep review-fix commits scoped.
 - Re-run validation that covers the changed surface.

@@ -12,7 +12,8 @@ usage() {
 
 SERVICE=$1
 ENVIRONMENT=${2:-both}
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OPS_PATH="$ROOT/repos/ops"
 WORKTREE_BASE="$ROOT/worktrees/ops"
 VALUES_STAGING="$OPS_PATH/k8s/$SERVICE/values.staging.yaml"

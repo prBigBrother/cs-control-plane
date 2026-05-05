@@ -9,5 +9,6 @@ Usage:
 `/session-brief [repo-or-worktree-path]`
 
 Rules:
-- Run `./bin/session-brief [repo-or-worktree-path]`.
+- From a repo worktree, run `./.opencode/bin/session-brief [repo-or-worktree-path]`.
+- From the control plane, run `./bin/session-brief [repo-or-worktree-path]`.
 - Return path, branch, git status, package scripts, and local instruction presence.

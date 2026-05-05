@@ -12,7 +12,8 @@ usage() {
 
 SERVICE=$1
 ENVIRONMENT_INPUT=${2:-both}
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=../lib/release-common.sh
 source "$ROOT/lib/release-common.sh"

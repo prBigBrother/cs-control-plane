@@ -10,5 +10,6 @@ Usage:
 
 Rules:
 - Accept repo as `ops` or `citizenshipper/ops`.
-- Run `./bin/pr-comments <repo> <pr-number>`.
+- From a repo worktree, run `./.opencode/bin/pr-comments <repo> <pr-number>`.
+- From the control plane, run `./bin/pr-comments <repo> <pr-number>`.
 - Prefer a compact summary with links, authors, and required actions.

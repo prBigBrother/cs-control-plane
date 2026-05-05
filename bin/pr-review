@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+usage() {
+  echo "Usage: pr-review collect <pr-url>"
+  echo "       pr-review submit <pr-url> <findings-json>"
+  echo
+  echo "Findings JSON shape:"
+  echo '[{"severity":"critical|medium|light","path":"src/file.ts","line":123,"title":"Short issue","body":"Review comment","suggestion":"Short fix direction","security":false}]'
+  exit "${1:-1}"
+}
+
+require_command() {
+  local command_name="$1"
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Error: missing required command: $command_name" >&2
+    exit 2
+  fi
+}
+
+parse_pr_url() {
+  local url="$1"
+  local parsed
+
+  parsed="$(printf '%s\n' "$url" | sed -E 's#^https://github.com/([^/]+/[^/]+)/pull/([0-9]+).*$#\1 \2#')"
+  if [ "$parsed" = "$url" ]; then
+    echo "Error: expected GitHub PR URL like https://github.com/owner/repo/pull/123" >&2
+    exit 3
+  fi
+
+  REPO="$(printf '%s\n' "$parsed" | awk '{print $1}')"
+  PR_NUMBER="$(printf '%s\n' "$parsed" | awk '{print $2}')"
+}
+
+setup() {
+  require_command gh
+  require_command jq
+
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "Error: GitHub CLI is not authenticated" >&2
+    exit 4
+  fi
+}
+
+review_dir_for() {
+  local repo_slug
+
+  repo_slug="$(printf '%s\n' "$REPO" | tr '/[:upper:]' '-[:lower:]')"
+  printf '%s\n' "$ROOT/tmp/pr-review-$repo_slug-$PR_NUMBER"
+}
+
+collect() {
+  local pr_url="$1"
+  local out_dir viewer author is_author
+
+  setup
+  parse_pr_url "$pr_url"
+  out_dir="$(review_dir_for)"
+  mkdir -p "$out_dir"
+
+  gh pr view "$PR_NUMBER" --repo "$REPO" --json \
+    url,number,title,state,isDraft,author,body,baseRefName,headRefName,headRepository,headRepositoryOwner,headRefOid,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,commits \
+    >"$out_dir/meta.json"
+  gh pr diff "$PR_NUMBER" --repo "$REPO" >"$out_dir/diff.patch"
+  gh pr view "$PR_NUMBER" --repo "$REPO" --json files --jq '.files' >"$out_dir/files.json"
+  gh api "/repos/$REPO/issues/$PR_NUMBER/comments" --paginate --slurp | jq 'flatten' >"$out_dir/issue-comments.json"
+  gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp | jq 'flatten' >"$out_dir/reviews.json"
+  gh api "/repos/$REPO/pulls/$PR_NUMBER/comments" --paginate --slurp | jq 'flatten' >"$out_dir/review-comments.json"
+
+  viewer="$(gh api user --jq '.login')"
+  author="$(jq -r '.author.login // ""' "$out_dir/meta.json")"
+  is_author=false
+  if [ "$viewer" = "$author" ]; then
+    is_author=true
+  fi
+
+  jq -n \
+    --arg repo "$REPO" \
+    --argjson number "$PR_NUMBER" \
+    --arg viewer "$viewer" \
+    --argjson isAuthor "$is_author" \
+    --slurpfile meta "$out_dir/meta.json" \
+    '{repo:$repo, number:$number, viewer:$viewer, is_author:$isAuthor, pr:$meta[0]}' \
+    >"$out_dir/context.json"
+
+  {
+    echo "# PR Review Packet"
+    echo
+    echo "- PR: [$(jq -r '.title' "$out_dir/meta.json")]($pr_url)"
+    echo "- Repository: $REPO"
+    echo "- Number: $PR_NUMBER"
+    echo "- Author: $author"
+    echo "- Viewer: $viewer"
+    echo "- Viewer is PR author: $is_author"
+    echo "- State: $(jq -r '.state' "$out_dir/meta.json")"
+    echo "- Review decision: $(jq -r '.reviewDecision // "UNKNOWN"' "$out_dir/meta.json")"
+    echo "- Changed files: $(jq -r '.changedFiles' "$out_dir/meta.json")"
+    echo "- Additions/deletions: +$(jq -r '.additions' "$out_dir/meta.json")/-$(jq -r '.deletions' "$out_dir/meta.json")"
+    echo
+    echo "## Description"
+    jq -r '.body // "(empty)"' "$out_dir/meta.json"
+    echo
+    echo "## Files"
+    jq -r '.[] | "- \(.path) (+\(.additions) -\(.deletions))"' "$out_dir/files.json"
+    echo
+    echo "## Existing Review Comments"
+    jq -r '.[]? | "- [\(.user.login)] \(.path):\(.line // "?") \(.body | gsub("\n"; " ") | .[0:240])"' "$out_dir/review-comments.json"
+    echo
+    echo "## Local Files"
+    echo "- Context JSON: $out_dir/context.json"
+    echo "- Metadata JSON: $out_dir/meta.json"
+    echo "- Files JSON: $out_dir/files.json"
+    echo "- Diff patch: $out_dir/diff.patch"
+    echo "- Findings JSON target: $out_dir/findings.json"
+  } >"$out_dir/packet.md"
+
+  echo "Review packet: $out_dir/packet.md"
+  echo "Diff patch: $out_dir/diff.patch"
+  echo "Context JSON: $out_dir/context.json"
+  echo "Findings JSON target: $out_dir/findings.json"
+  echo "Viewer is PR author: $is_author"
+}
+
+submit() {
+  local pr_url="$1"
+  local findings_file="$2"
+  local out_dir viewer author is_author event review_body payload_file comment_count
+
+  setup
+  parse_pr_url "$pr_url"
+
+  if [ ! -f "$findings_file" ]; then
+    echo "Error: findings JSON not found: $findings_file" >&2
+    exit 5
+  fi
+
+  out_dir="$(review_dir_for)"
+  mkdir -p "$out_dir"
+
+  gh pr view "$PR_NUMBER" --repo "$REPO" --json author,headRefOid,title,url >"$out_dir/submit-meta.json"
+  viewer="$(gh api user --jq '.login')"
+  author="$(jq -r '.author.login // ""' "$out_dir/submit-meta.json")"
+  is_author=false
+  if [ "$viewer" = "$author" ]; then
+    is_author=true
+  fi
+
+  jq '
+    map(
+      if (.security == true or (.category // "" | ascii_downcase) == "security")
+      then .severity = "critical"
+      else .
+      end
+    )
+  ' "$findings_file" >"$out_dir/normalized-findings.json"
+
+  if [ "$is_author" = true ]; then
+    echo "PR is authored by $viewer; refusing to comment, approve, or request changes."
+    echo "Normalized findings:"
+    cat "$out_dir/normalized-findings.json"
+    exit 0
+  fi
+
+  if jq -e 'any(.[]; (.severity // "" | ascii_downcase) == "critical" or (.severity // "" | ascii_downcase) == "medium")' "$out_dir/normalized-findings.json" >/dev/null; then
+    event="REQUEST_CHANGES"
+  else
+    event="APPROVE"
+  fi
+
+  review_body="$(
+    jq -r '
+      def sev: (.severity // "light" | ascii_downcase);
+      def icon: if sev == "critical" then "Critical" elif sev == "medium" then "Medium" else "Light" end;
+      def suggestion_line: if (.suggestion // "") != "" then " Suggested solution: " + (.suggestion | gsub("\n"; " ")) else "" end;
+      if length == 0 then
+        "No blocking issues found."
+      else
+        [ .[] | "- **" + icon + ": " + ((.title // .body // "Issue") | gsub("\n"; " ")) + "**" + suggestion_line ] | join("\n")
+      end
+    ' "$out_dir/normalized-findings.json"
+  )"
+
+  payload_file="$out_dir/review-payload.json"
+  jq -n \
+    --arg commit_id "$(jq -r '.headRefOid' "$out_dir/submit-meta.json")" \
+    --arg event "$event" \
+    --arg body "$review_body" \
+    --slurpfile findings "$out_dir/normalized-findings.json" '
+      {
+        commit_id: $commit_id,
+        event: $event,
+        body: $body,
+        comments: [
+          $findings[0][]
+          | select((.path // "") != "" and (.line // null) != null and (.body // "") != "")
+          | {
+              path: .path,
+              line: .line,
+              side: (.side // "RIGHT"),
+              body: (
+                "**" + ((.severity // "light") | ascii_downcase | ascii_upcase) + ": " + ((.title // "Issue") | tostring) + "**\n\n" +
+                (.body | tostring) +
+                (if (.suggestion // "") != "" then "\n\nSuggested solution: " + (.suggestion | tostring) else "" end)
+              )
+            }
+        ]
+      }
+    ' >"$payload_file"
+
+  comment_count="$(jq '.comments | length' "$payload_file")"
+  gh api -X POST "/repos/$REPO/pulls/$PR_NUMBER/reviews" --input "$payload_file" >/dev/null
+
+  if [ "$event" = "REQUEST_CHANGES" ]; then
+    echo "Requested changes on $REPO#$PR_NUMBER with $comment_count line comments."
+  else
+    echo "Approved $REPO#$PR_NUMBER with $comment_count line comments."
+  fi
+}
+
+case "${1:-}" in
+  collect)
+    [ "$#" -eq 2 ] || usage
+    collect "$2"
+    ;;
+  submit)
+    [ "$#" -eq 3 ] || usage
+    submit "$2" "$3"
+    ;;
+  -h|--help)
+    usage 0
+    ;;
+  *)
+    usage
+    ;;
+esac
