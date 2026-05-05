@@ -8,6 +8,7 @@ This document explains the current shared agents in the control plane and when t
 - Use the control plane only for shared orchestration, release helpers, and cross-repo coordination.
 - One editable repo gets one owner at a time.
 - When a prompt names an `ENG-<id>` task without issue details, resolve the Linear issue before repo investigation or implementation.
+- Format URLs in agent output as Markdown links so they are clickable, except inside raw logs or code blocks.
 
 ## Agent List
 

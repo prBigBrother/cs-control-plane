@@ -16,6 +16,7 @@ Rules:
 
 Output format:
 - Write normal Markdown, not a fenced code block.
+- Format URLs as Markdown links unless quoting raw command output.
 - Use these headings when relevant:
   - Feature area
   - Source of truth
