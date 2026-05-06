@@ -21,6 +21,7 @@ Run these from the control-plane repo root because they create, remove, coordina
 - `/cross-impl`
 - `/migration-audit`
 - `/compare`
+- `/compare-curl`
 - `/release-prepare`
 - `/workspace-status`
 
@@ -162,6 +163,36 @@ Typical output:
 - target SHA
 - commit list between those revisions
 - no agent transcript
+
+### `/compare-curl`
+
+Session:
+- control-plane preferred, either session when the helper is installed
+
+Purpose:
+- run two curl commands and compare their response bodies
+- pretty-print JSON responses after recursively sorting object keys and array items before comparison
+- emit concise Markdown context that a migration-fix agent can use to align local with staging
+
+Use it when:
+- you are comparing two API responses
+- you need stable JSON diffs that are not polluted by object key or array item order
+- you need to hand an agent concrete local-vs-staging response differences before fixing missing behavior
+
+Backed by:
+- `./bin/compare-curl`
+
+Usage:
+- `/compare-curl '<curl ...>' '<curl ...>'`
+- `/compare-curl --format text '<curl ...>' '<curl ...>'`
+- `/compare-curl --context 5 --left-label old --right-label new '<curl ...>' '<curl ...>'`
+- `/compare-curl --no-line-diff '<curl ...>' '<curl ...>'`
+
+Typical output:
+- Markdown objective that tells the agent to make local match staging
+- response snapshot table with status, content type, response size, and timing for each curl
+- JSON path-level agent fix context that explains what local is missing or changing
+- fenced line-numbered normalized response diff as evidence
 
 ### `/pr-comments`
 

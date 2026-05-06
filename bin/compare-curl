@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+import argparse
+import difflib
+import json
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from typing import Any, Optional
+
+
+META_PREFIX = "__COMPARE_CURL_META__\t"
+MISSING = object()
+
+
+@dataclass
+class CurlResult:
+    label: str
+    command: str
+    exit_code: int
+    stderr: str
+    body: str
+    parsed_json: Optional[Any]
+    body_kind: str
+    normalized: str
+    http_code: str
+    content_type: str
+    time_total: str
+    size_download: str
+    url_effective: str
+
+
+def usage_error(message: str) -> None:
+    print(f"compare-curl: {message}", file=sys.stderr)
+    print("Usage: compare-curl [--format markdown|text] [--context N] [--left-label NAME] [--right-label NAME] '<curl ...>' '<curl ...>'", file=sys.stderr)
+    sys.exit(2)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="compare-curl",
+        description="Run two curl commands, normalize JSON responses, and report line-numbered differences.",
+    )
+    parser.add_argument("--context", type=int, default=3, help="context lines around each diff hunk (default: 3)")
+    parser.add_argument("--left-label", default="local", help="label for the first curl command")
+    parser.add_argument("--right-label", default="staging", help="label for the second curl command")
+    parser.add_argument("--max-findings", type=int, default=80, help="maximum JSON analytics findings to print (default: 80)")
+    parser.add_argument("--no-line-diff", action="store_true", help="skip the supporting line-numbered response diff")
+    parser.add_argument("--format", choices=("markdown", "text"), default="markdown", help="output format (default: markdown)")
+    parser.add_argument("curl_commands", nargs="*", metavar="curl")
+    args = parser.parse_args()
+    if args.context < 0:
+        usage_error("--context must be 0 or greater")
+    if args.max_findings < 1:
+        usage_error("--max-findings must be 1 or greater")
+    if len(args.curl_commands) != 2:
+        usage_error("expected exactly two quoted curl commands")
+    return args
+
+
+def split_curl(command: str) -> list[str]:
+    command = command.replace("\\\n", " ")
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        usage_error(f"could not parse curl command: {exc}")
+    if not argv:
+        usage_error("curl command is empty")
+    if os.path.basename(argv[0]) != "curl":
+        usage_error(f"only curl commands are accepted, got: {argv[0]}")
+    return argv
+
+
+def json_sort_identity(value: Any) -> tuple[str, str, str]:
+    if isinstance(value, dict):
+        for key in ("id", "code", "uuid", "slug", "name", "title"):
+            if key in value:
+                return ("object-key", key, json.dumps(value[key], sort_keys=True, ensure_ascii=False))
+        return ("object", "", json.dumps(value, sort_keys=True, ensure_ascii=False))
+    if isinstance(value, list):
+        return ("array", "", json.dumps(value, sort_keys=True, ensure_ascii=False))
+    return (json_type(value), "", json.dumps(value, sort_keys=True, ensure_ascii=False))
+
+
+def sort_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: sort_json(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        sorted_items = [sort_json(item) for item in value]
+        return sorted(sorted_items, key=json_sort_identity)
+    return value
+
+
+def decode_body(raw: bytes) -> str:
+    return raw.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def normalize_body(body: str) -> tuple[str, str, Optional[Any]]:
+    stripped = body.strip()
+    if stripped:
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+        else:
+            normalized_json = sort_json(parsed)
+            return json.dumps(normalized_json, indent=2, sort_keys=False, ensure_ascii=False) + "\n", "json", normalized_json
+    return body if body.endswith("\n") or body == "" else body + "\n", "text", None
+
+
+def parse_meta(stdout: str) -> dict[str, str]:
+    meta = {
+        "http_code": "",
+        "content_type": "",
+        "time_total": "",
+        "size_download": "",
+        "url_effective": "",
+    }
+    for line in stdout.splitlines():
+        if line.startswith(META_PREFIX):
+            parts = line[len(META_PREFIX):].split("\t", 4)
+            while len(parts) < 5:
+                parts.append("")
+            meta.update(
+                {
+                    "http_code": parts[0],
+                    "content_type": parts[1],
+                    "time_total": parts[2],
+                    "size_download": parts[3],
+                    "url_effective": parts[4],
+                }
+            )
+    return meta
+
+
+def run_curl(label: str, command: str, temp_dir: str) -> CurlResult:
+    argv = split_curl(command)
+    body_path = os.path.join(temp_dir, f"{label}.body")
+    write_out = f"\\n{META_PREFIX}%{{http_code}}\\t%{{content_type}}\\t%{{time_total}}\\t%{{size_download}}\\t%{{url_effective}}\\n"
+    run_argv = argv + ["--silent", "--show-error", "--output", body_path, "--write-out", write_out]
+
+    completed = subprocess.run(run_argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        with open(body_path, "rb") as handle:
+            body = decode_body(handle.read())
+    except FileNotFoundError:
+        body = ""
+    normalized, body_kind, parsed_json = normalize_body(body)
+    meta = parse_meta(completed.stdout)
+
+    return CurlResult(
+        label=label,
+        command=command,
+        exit_code=completed.returncode,
+        stderr=completed.stderr.strip(),
+        body=body,
+        parsed_json=parsed_json,
+        body_kind=body_kind,
+        normalized=normalized,
+        http_code=meta["http_code"],
+        content_type=meta["content_type"],
+        time_total=meta["time_total"],
+        size_download=meta["size_download"],
+        url_effective=meta["url_effective"],
+    )
+
+
+def format_range(start: int, end: int) -> str:
+    if start == end:
+        return str(start)
+    return f"{start}-{end}"
+
+
+def changed_ranges(left_lines: list[str], right_lines: list[str]) -> list[str]:
+    ranges: list[str] = []
+    matcher = difflib.SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
+    for tag, left_start, left_end, right_start, right_end in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        left_range = "none" if left_start == left_end else format_range(left_start + 1, left_end)
+        right_range = "none" if right_start == right_end else format_range(right_start + 1, right_end)
+        ranges.append(f"- {tag}: {left_range} -> {right_range}")
+    return ranges
+
+
+def markdown_escape(value: Any) -> str:
+    text = str(value)
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
+def code_span(value: Any) -> str:
+    text = markdown_escape(value)
+    if "`" not in text:
+        return f"`{text}`"
+    return f"`` {text} ``"
+
+
+def bold_code_span(value: Any) -> str:
+    return f"**{code_span(value)}**"
+
+
+def describe_value(value: Any, max_length: int = 180) -> str:
+    if isinstance(value, dict):
+        keys = ", ".join(list(value.keys())[:8])
+        suffix = ", ..." if len(value) > 8 else ""
+        text = f"object({keys}{suffix})"
+    elif isinstance(value, list):
+        text = f"array(length={len(value)})"
+    else:
+        text = json.dumps(value, ensure_ascii=False)
+    if len(text) > max_length:
+        return text[: max_length - 3] + "..."
+    return text
+
+
+def json_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
+
+
+def join_path(parent: str, part: str) -> str:
+    return f"{parent}.{part}" if parent else part
+
+
+def keyed_array(values: list[Any]) -> Optional[tuple[str, dict[str, Any]]]:
+    for key in ("id", "code", "uuid", "slug", "name", "title"):
+        indexed: dict[str, Any] = {}
+        for item in values:
+            if not isinstance(item, dict) or key not in item:
+                break
+            indexed[str(item[key])] = item
+        else:
+            if len(indexed) == len(values):
+                return key, indexed
+    return None
+
+
+@dataclass
+class JsonFinding:
+    kind: str
+    path: str
+    left_value: Any
+    right_value: Any
+
+
+def compare_json(left: Any, right: Any, path: str = "") -> list[JsonFinding]:
+    if type(left) is not type(right):
+        return [JsonFinding("type", path or "$", json_type(left), json_type(right))]
+
+    if isinstance(left, dict):
+        findings: list[JsonFinding] = []
+        left_keys = set(left)
+        right_keys = set(right)
+        for key in sorted(left_keys - right_keys):
+            findings.append(JsonFinding("only-left", join_path(path, key), left[key], MISSING))
+        for key in sorted(right_keys - left_keys):
+            findings.append(JsonFinding("only-right", join_path(path, key), MISSING, right[key]))
+        for key in sorted(left_keys & right_keys):
+            findings.extend(compare_json(left[key], right[key], join_path(path, key)))
+        return findings
+
+    if isinstance(left, list):
+        left_keyed = keyed_array(left)
+        right_keyed = keyed_array(right)
+        if left_keyed and right_keyed and left_keyed[0] == right_keyed[0]:
+            key = left_keyed[0]
+            left_items = left_keyed[1]
+            right_items = right_keyed[1]
+            findings = []
+            for item_key in sorted(set(left_items) - set(right_items)):
+                findings.append(JsonFinding("only-left", f"{path}[{key}={item_key}]", left_items[item_key], MISSING))
+            for item_key in sorted(set(right_items) - set(left_items)):
+                findings.append(JsonFinding("only-right", f"{path}[{key}={item_key}]", MISSING, right_items[item_key]))
+            for item_key in sorted(set(left_items) & set(right_items)):
+                findings.extend(compare_json(left_items[item_key], right_items[item_key], f"{path}[{key}={item_key}]"))
+            return findings
+
+        findings = []
+        if len(left) != len(right):
+            findings.append(JsonFinding("length", path or "$", len(left), len(right)))
+        for index, (left_item, right_item) in enumerate(zip(left, right)):
+            findings.extend(compare_json(left_item, right_item, f"{path}[{index}]"))
+        return findings
+
+    if left != right:
+        return [JsonFinding("value", path or "$", left, right)]
+    return []
+
+
+def line_for_path(result: CurlResult, path: str, value: Any) -> str:
+    lines = result.normalized.splitlines()
+
+    key_match = None
+    if "[" in path and "=" in path:
+        key_match = path.rsplit("[", 1)[1].rstrip("]")
+        if "=" in key_match:
+            key, raw_value = key_match.split("=", 1)
+            match_value = value.get(key) if isinstance(value, dict) and key in value else raw_value
+            needle = f'"{key}": {json.dumps(match_value, ensure_ascii=False)}'
+            for index, line in enumerate(lines, start=1):
+                if needle in line:
+                    return str(index)
+
+    last = path.rsplit(".", 1)[-1]
+    if "[" in last:
+        last = last.split("[", 1)[0]
+    if last and last != "$":
+        needle = f'"{last}":'
+        for index, line in enumerate(lines, start=1):
+            if needle in line:
+                return str(index)
+
+    rendered = describe_value(value, max_length=80)
+    if not rendered.startswith(("object(", "array(")):
+        for index, line in enumerate(lines, start=1):
+            if rendered in line:
+                return str(index)
+
+    return "n/a"
+
+
+def json_finding_lines(left: CurlResult, right: CurlResult, findings: list[JsonFinding], max_findings: int, markdown: bool = False) -> list[str]:
+    lines: list[str] = []
+    if not findings:
+        return ["JSON bodies match after normalization."]
+
+    shown = findings[:max_findings]
+    for finding in shown:
+        path = bold_code_span(finding.path) if markdown else finding.path
+        left_line = line_for_path(left, finding.path, finding.left_value) if finding.left_value is not MISSING else "missing"
+        right_line = line_for_path(right, finding.path, finding.right_value) if finding.right_value is not MISSING else "missing"
+        if finding.kind == "only-left":
+            lines.append(f"{path}: present only in {left.label} at line {left_line}; remove from {left.label} or add to {right.label}. Value: {describe_value(finding.left_value)}")
+        elif finding.kind == "only-right":
+            lines.append(f"{path}: missing in {left.label}; present in {right.label} at line {right_line}. Add/align in {left.label}. Value: {describe_value(finding.right_value)}")
+        elif finding.kind == "length":
+            lines.append(f"{path}: array length differs; {left.label} line {left_line} has {finding.left_value}, {right.label} line {right_line} has {finding.right_value}.")
+        elif finding.kind == "type":
+            lines.append(f"{path}: type differs; {left.label} line {left_line} is {finding.left_value}, {right.label} line {right_line} is {finding.right_value}.")
+        else:
+            lines.append(f"{path}: value differs; {left.label} line {left_line} = {describe_value(finding.left_value)}, {right.label} line {right_line} = {describe_value(finding.right_value)}.")
+
+    hidden = len(findings) - len(shown)
+    if hidden > 0:
+        lines.append(f"... {hidden} more finding(s) hidden; rerun with --max-findings {len(findings)} to show all.")
+    return lines
+
+
+def print_json_findings(left: CurlResult, right: CurlResult, findings: list[JsonFinding], max_findings: int) -> None:
+    print("Migration alignment findings:")
+    for line in json_finding_lines(left, right, findings, max_findings):
+        print(f"- {line}")
+
+
+def build_annotated_diff(left: CurlResult, right: CurlResult, context: int) -> list[str]:
+    left_lines = left.normalized.splitlines()
+    right_lines = right.normalized.splitlines()
+    matcher = difflib.SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
+    grouped = matcher.get_grouped_opcodes(n=context)
+    output: list[str] = []
+
+    for group in grouped:
+        first = group[0]
+        last = group[-1]
+        left_start = first[1] + 1
+        left_end = last[2]
+        right_start = first[3] + 1
+        right_end = last[4]
+        output.append(f"@@ {left.label}:{format_range(left_start, left_end)} {right.label}:{format_range(right_start, right_end)} @@")
+
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                for offset, line in enumerate(left_lines[i1:i2], start=i1 + 1):
+                    output.append(f" {offset:>5}   {line}")
+            elif tag == "delete":
+                for offset, line in enumerate(left_lines[i1:i2], start=i1 + 1):
+                    output.append(f"-{offset:>5}   {line}")
+            elif tag == "insert":
+                for offset, line in enumerate(right_lines[j1:j2], start=j1 + 1):
+                    output.append(f"+{offset:>5}   {line}")
+            elif tag == "replace":
+                for offset, line in enumerate(left_lines[i1:i2], start=i1 + 1):
+                    output.append(f"-{offset:>5}   {line}")
+                for offset, line in enumerate(right_lines[j1:j2], start=j1 + 1):
+                    output.append(f"+{offset:>5}   {line}")
+        output.append("")
+
+    if output and output[-1] == "":
+        output.pop()
+    return output
+
+
+def print_result_summary(left: CurlResult, right: CurlResult) -> None:
+    print("Response summary:")
+    print(f"- {left.label}: status={left.http_code or 'unknown'} type={left.content_type or 'unknown'} bytes={left.size_download or 'unknown'} time={left.time_total or 'unknown'}s format={left.body_kind}")
+    print(f"- {right.label}: status={right.http_code or 'unknown'} type={right.content_type or 'unknown'} bytes={right.size_download or 'unknown'} time={right.time_total or 'unknown'}s format={right.body_kind}")
+    if left.url_effective or right.url_effective:
+        print(f"- effective URLs: {left.label}={left.url_effective or 'unknown'} | {right.label}={right.url_effective or 'unknown'}")
+    if left.exit_code != 0 or right.exit_code != 0:
+        print(f"- exit codes: {left.label}={left.exit_code} | {right.label}={right.exit_code}")
+    if left.stderr:
+        print(f"- {left.label} stderr: {left.stderr}")
+    if right.stderr:
+        print(f"- {right.label} stderr: {right.stderr}")
+
+
+def print_markdown_summary(left: CurlResult, right: CurlResult) -> None:
+    print("# Migration Response Alignment Context")
+    print("")
+    print("## Objective")
+    print("")
+    print(f"Update `{left.label}` so its normalized response matches `{right.label}`.")
+    print("")
+    print("## Response Snapshot")
+    print("")
+    print("| Side | Status | Format | Content type | Bytes | Time |")
+    print("| --- | ---: | --- | --- | ---: | ---: |")
+    for result in (left, right):
+        print(
+            f"| {markdown_escape(result.label)} | {markdown_escape(result.http_code or 'unknown')} | "
+            f"{markdown_escape(result.body_kind)} | {markdown_escape(result.content_type or 'unknown')} | "
+            f"{markdown_escape(result.size_download or 'unknown')} | {markdown_escape((result.time_total or 'unknown') + 's')} |"
+        )
+    if left.url_effective or right.url_effective:
+        print("")
+        print("| Side | Effective URL |")
+        print("| --- | --- |")
+        print(f"| {markdown_escape(left.label)} | {code_span(left.url_effective or 'unknown')} |")
+        print(f"| {markdown_escape(right.label)} | {code_span(right.url_effective or 'unknown')} |")
+    if left.exit_code != 0 or right.exit_code != 0 or left.stderr or right.stderr:
+        print("")
+        print("## Curl Diagnostics")
+        print("")
+        print(f"- {code_span(left.label)} exit code: {code_span(left.exit_code)}")
+        print(f"- {code_span(right.label)} exit code: {code_span(right.exit_code)}")
+        if left.stderr:
+            print(f"- {code_span(left.label)} stderr: {code_span(left.stderr)}")
+        if right.stderr:
+            print(f"- {code_span(right.label)} stderr: {code_span(right.stderr)}")
+
+
+def print_markdown_report(left: CurlResult, right: CurlResult, args: argparse.Namespace) -> None:
+    left_lines = left.normalized.splitlines()
+    right_lines = right.normalized.splitlines()
+    print_markdown_summary(left, right)
+    print("")
+
+    if left_lines == right_lines:
+        print("## Result")
+        print("")
+        print(f"`{left.label}` already matches `{right.label}` after normalization.")
+        return
+
+    if left.body_kind == "json" and right.body_kind == "json":
+        print("## Agent Fix Context")
+        print("")
+        print(f"Use these findings to make `{left.label}` align with `{right.label}`.")
+        print("")
+        findings = compare_json(left.parsed_json, right.parsed_json)
+        for line in json_finding_lines(left, right, findings, args.max_findings, markdown=True):
+            print(f"- {line}")
+        print("")
+
+    if not args.no_line_diff:
+        print("## Evidence Diff")
+        print("")
+        print("Normalized response bodies are shown with line numbers. `-` is local, `+` is staging.")
+        print("")
+        print("```diff")
+        for line in build_annotated_diff(left, right, args.context):
+            print(line)
+        print("```")
+
+
+def main() -> int:
+    args = parse_args()
+    with tempfile.TemporaryDirectory(prefix="compare-curl-") as temp_dir:
+        left = run_curl(args.left_label, args.curl_commands[0], temp_dir)
+        right = run_curl(args.right_label, args.curl_commands[1], temp_dir)
+
+    left_lines = left.normalized.splitlines()
+    right_lines = right.normalized.splitlines()
+    if args.format == "markdown":
+        print_markdown_report(left, right, args)
+        return 0 if left_lines == right_lines and left.exit_code == 0 and right.exit_code == 0 else 1
+
+    print_result_summary(left, right)
+    print("")
+
+    if left_lines == right_lines:
+        print("No response body differences after normalization.")
+        return 0 if left.exit_code == 0 and right.exit_code == 0 else 1
+
+    if left.body_kind == "json" and right.body_kind == "json":
+        print_json_findings(left, right, compare_json(left.parsed_json, right.parsed_json), args.max_findings)
+        print("")
+
+    print("Changed normalized response lines:")
+    for line in changed_ranges(left_lines, right_lines):
+        print(line)
+    if not args.no_line_diff:
+        print("")
+        print("Line-numbered normalized response diff:")
+        print("```diff")
+        for line in build_annotated_diff(left, right, args.context):
+            print(line)
+        print("```")
+
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
