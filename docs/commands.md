@@ -184,6 +184,8 @@ Backed by:
 
 Usage:
 - `/compare-curl '<curl ...>' '<curl ...>'`
+- `/compare-curl <raw pasted local curl> <raw pasted staging curl>`
+- `/compare-curl --input-file tmp/compare-curl-input.txt`
 - `/compare-curl --format text '<curl ...>' '<curl ...>'`
 - `/compare-curl --context 5 --left-label old --right-label new '<curl ...>' '<curl ...>'`
 - `/compare-curl --no-line-diff '<curl ...>' '<curl ...>'`
@@ -193,6 +195,7 @@ Typical output:
 - response snapshot table with status, content type, response size, and timing for each curl
 - JSON path-level agent fix context that explains what local is missing or changing
 - fenced line-numbered normalized response diff as evidence
+- skipped-diff diagnostics instead of a body diff when either side fails or returns HTTP 4xx/5xx
 
 ### `/pr-comments`
 

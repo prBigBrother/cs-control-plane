@@ -34,7 +34,7 @@ class CurlResult:
 
 def usage_error(message: str) -> None:
     print(f"compare-curl: {message}", file=sys.stderr)
-    print("Usage: compare-curl [--format markdown|text] [--context N] [--left-label NAME] [--right-label NAME] '<curl ...>' '<curl ...>'", file=sys.stderr)
+    print("Usage: compare-curl [--stdin|--input-file FILE|'<curl ...>' '<curl ...>'] [options]", file=sys.stderr)
     sys.exit(2)
 
 
@@ -49,14 +49,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-findings", type=int, default=80, help="maximum JSON analytics findings to print (default: 80)")
     parser.add_argument("--no-line-diff", action="store_true", help="skip the supporting line-numbered response diff")
     parser.add_argument("--format", choices=("markdown", "text"), default="markdown", help="output format (default: markdown)")
+    parser.add_argument("--stdin", action="store_true", help="read a raw blob containing exactly two curl commands from stdin")
+    parser.add_argument("--input-file", help="read a raw blob containing exactly two curl commands from a file")
     parser.add_argument("curl_commands", nargs="*", metavar="curl")
     args = parser.parse_args()
     if args.context < 0:
         usage_error("--context must be 0 or greater")
     if args.max_findings < 1:
         usage_error("--max-findings must be 1 or greater")
-    if len(args.curl_commands) != 2:
-        usage_error("expected exactly two quoted curl commands")
+    input_modes = int(args.stdin) + int(args.input_file is not None)
+    if input_modes > 1:
+        usage_error("use only one input mode: positional args, --stdin, or --input-file")
+    if input_modes == 0 and len(args.curl_commands) != 2:
+        usage_error("expected exactly two quoted curl commands, or use --stdin/--input-file for raw pasted curls")
+    if input_modes == 1 and args.curl_commands:
+        usage_error("do not pass positional curl commands with --stdin or --input-file")
     return args
 
 
@@ -71,6 +78,49 @@ def split_curl(command: str) -> list[str]:
     if os.path.basename(argv[0]) != "curl":
         usage_error(f"only curl commands are accepted, got: {argv[0]}")
     return argv
+
+
+def shell_tokens(blob: str) -> list[str]:
+    lexer = shlex.shlex(blob.replace("\\\n", " "), posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        return list(lexer)
+    except ValueError as exc:
+        usage_error(f"could not parse pasted curls: {exc}")
+
+
+def curl_command_indexes(tokens: list[str]) -> list[int]:
+    return [index for index, token in enumerate(tokens) if os.path.basename(token) == "curl"]
+
+
+def parse_curl_blob(blob: str) -> list[list[str]]:
+    tokens = shell_tokens(blob)
+    indexes = curl_command_indexes(tokens)
+    if len(indexes) != 2:
+        usage_error(f"expected pasted input to contain exactly two curl commands, found {len(indexes)}")
+    first_start, second_start = indexes
+    first = tokens[first_start:second_start]
+    second = tokens[second_start:]
+    if not first or not second:
+        usage_error("could not split pasted input into two curl commands")
+    return [first, second]
+
+
+def read_curl_argvs(args: argparse.Namespace) -> list[list[str]]:
+    if args.stdin:
+        return parse_curl_blob(sys.stdin.read())
+    if args.input_file:
+        try:
+            with open(args.input_file, "r", encoding="utf-8") as handle:
+                return parse_curl_blob(handle.read())
+        except OSError as exc:
+            usage_error(f"could not read input file: {exc}")
+    return [split_curl(args.curl_commands[0]), split_curl(args.curl_commands[1])]
+
+
+def display_command(argv: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in argv)
 
 
 def json_sort_identity(value: Any) -> tuple[str, str, str]:
@@ -135,8 +185,9 @@ def parse_meta(stdout: str) -> dict[str, str]:
     return meta
 
 
-def run_curl(label: str, command: str, temp_dir: str) -> CurlResult:
-    argv = split_curl(command)
+def run_curl(label: str, argv: list[str], temp_dir: str) -> CurlResult:
+    if not argv or os.path.basename(argv[0]) != "curl":
+        usage_error("only curl commands are accepted")
     body_path = os.path.join(temp_dir, f"{label}.body")
     write_out = f"\\n{META_PREFIX}%{{http_code}}\\t%{{content_type}}\\t%{{time_total}}\\t%{{size_download}}\\t%{{url_effective}}\\n"
     run_argv = argv + ["--silent", "--show-error", "--output", body_path, "--write-out", write_out]
@@ -152,7 +203,7 @@ def run_curl(label: str, command: str, temp_dir: str) -> CurlResult:
 
     return CurlResult(
         label=label,
-        command=command,
+        command=display_command(argv),
         exit_code=completed.returncode,
         stderr=completed.stderr.strip(),
         body=body,
@@ -183,6 +234,31 @@ def changed_ranges(left_lines: list[str], right_lines: list[str]) -> list[str]:
         right_range = "none" if right_start == right_end else format_range(right_start + 1, right_end)
         ranges.append(f"- {tag}: {left_range} -> {right_range}")
     return ranges
+
+
+def http_status_is_error(http_code: str) -> bool:
+    try:
+        code = int(http_code)
+    except ValueError:
+        return False
+    return 400 <= code <= 599
+
+
+def result_error_reasons(result: CurlResult) -> list[str]:
+    reasons: list[str] = []
+    if result.exit_code != 0:
+        reasons.append(f"curl exit code {result.exit_code}")
+    if http_status_is_error(result.http_code):
+        reasons.append(f"HTTP {result.http_code}")
+    return reasons
+
+
+def comparison_error_reasons(left: CurlResult, right: CurlResult) -> list[str]:
+    reasons: list[str] = []
+    for result in (left, right):
+        for reason in result_error_reasons(result):
+            reasons.append(f"{result.label}: {reason}")
+    return reasons
 
 
 def markdown_escape(value: Any) -> str:
@@ -456,6 +532,16 @@ def print_markdown_report(left: CurlResult, right: CurlResult, args: argparse.Na
     print_markdown_summary(left, right)
     print("")
 
+    error_reasons = comparison_error_reasons(left, right)
+    if error_reasons:
+        print("## Result")
+        print("")
+        print("Response body diff skipped because at least one server returned an error.")
+        print("")
+        for reason in error_reasons:
+            print(f"- {reason}")
+        return
+
     if left_lines == right_lines:
         print("## Result")
         print("")
@@ -485,9 +571,10 @@ def print_markdown_report(left: CurlResult, right: CurlResult, args: argparse.Na
 
 def main() -> int:
     args = parse_args()
+    curl_argvs = read_curl_argvs(args)
     with tempfile.TemporaryDirectory(prefix="compare-curl-") as temp_dir:
-        left = run_curl(args.left_label, args.curl_commands[0], temp_dir)
-        right = run_curl(args.right_label, args.curl_commands[1], temp_dir)
+        left = run_curl(args.left_label, curl_argvs[0], temp_dir)
+        right = run_curl(args.right_label, curl_argvs[1], temp_dir)
 
     left_lines = left.normalized.splitlines()
     right_lines = right.normalized.splitlines()
@@ -497,6 +584,13 @@ def main() -> int:
 
     print_result_summary(left, right)
     print("")
+
+    error_reasons = comparison_error_reasons(left, right)
+    if error_reasons:
+        print("Response body diff skipped because at least one server returned an error.")
+        for reason in error_reasons:
+            print(f"- {reason}")
+        return 1
 
     if left_lines == right_lines:
         print("No response body differences after normalization.")

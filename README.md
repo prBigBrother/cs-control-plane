@@ -97,12 +97,22 @@ The default profile is `engineering`, which keeps remote MCPs disabled and loads
 - `external`: engineering plus remote MCP integrations
 - `full`: all shared rules plus remote MCP integrations, matching the previous broad setup
 
+The `external` and `full` profiles include the official Datadog MCP server with `core,apm` toolsets for log and trace investigation. After installing one of those profiles, authenticate once with:
+
+```bash
+opencode mcp auth datadog
+```
+
+Use the Datadog endpoint for your site if the default US1 endpoint is not correct.
+
 Agent visibility is installed separately:
 - `repo`: Explorer, Implementer, Validator
 - `control-plane`: Manager, Auditor, Release
 - `full`: all project agents
 
 Repo and worktree sessions also receive the shared helper scripts at `./.opencode/bin`, so slash commands can run deterministic helpers without locating the control-plane checkout.
+
+The installer also links the control-plane `.envrc` into the target root and adds `/.envrc` to that repo's local git exclude file. This makes direnv-backed credentials and local service endpoints available when shells or tools start directly inside a repo or worktree. New targets still need the normal one-time `direnv allow`.
 
 Use the third argument to choose an agent set explicitly:
 

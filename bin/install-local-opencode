@@ -82,15 +82,37 @@ case "$GIT_DIR" in
   *) GIT_DIR="$TARGET/$GIT_DIR" ;;
 esac
 
-if mkdir -p "$GIT_DIR/info" 2>/dev/null && { [ -e "$GIT_DIR/info/exclude" ] || touch "$GIT_DIR/info/exclude" 2>/dev/null; }; then
-  for entry in "/opencode.json" "/.opencode"; do
-    if ! grep -qxF "$entry" "$GIT_DIR/info/exclude"; then
-      if [ ! -w "$GIT_DIR/info/exclude" ]; then
-        break
-      fi
-      printf "%s\n" "$entry" >> "$GIT_DIR/info/exclude"
+GIT_COMMON_DIR="$(git -C "$TARGET" rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$GIT_COMMON_DIR" ]; then
+  case "$GIT_COMMON_DIR" in
+    /*) ;;
+    *) GIT_COMMON_DIR="$TARGET/$GIT_COMMON_DIR" ;;
+  esac
+else
+  GIT_COMMON_DIR="$GIT_DIR"
+fi
+
+exclude_local_entry() {
+  local exclude_dir="$1"
+  local exclude_file="$exclude_dir/info/exclude"
+  local entry
+
+  if ! mkdir -p "$exclude_dir/info" 2>/dev/null || { [ ! -e "$exclude_file" ] && ! touch "$exclude_file" 2>/dev/null; }; then
+    return 1
+  fi
+
+  for entry in "/opencode.json" "/.opencode" "/.envrc"; do
+    if ! grep -qxF "$entry" "$exclude_file"; then
+      [ -w "$exclude_file" ] || return 1
+      printf "%s\n" "$entry" >> "$exclude_file"
     fi
   done
+}
+
+if exclude_local_entry "$GIT_DIR"; then
+  if [ "$GIT_COMMON_DIR" != "$GIT_DIR" ]; then
+    exclude_local_entry "$GIT_COMMON_DIR" || true
+  fi
 else
   echo "Warning: could not update $GIT_DIR/info/exclude; continuing with OpenCode install." >&2
 fi
@@ -111,6 +133,10 @@ install_agent_pack() {
 
 if [ "$CONFIG" != "$TARGET/opencode.json" ]; then
   link_relative "$CONFIG" "$TARGET/opencode.json"
+fi
+
+if [ "$TARGET" != "$ROOT" ] && [ -f "$ROOT/.envrc" ] && [ ! -e "$TARGET/.envrc" ] && [ ! -L "$TARGET/.envrc" ]; then
+  link_relative "$ROOT/.envrc" "$TARGET/.envrc"
 fi
 
 if [ -L "$TARGET/.opencode" ]; then
