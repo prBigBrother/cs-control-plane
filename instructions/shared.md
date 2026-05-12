@@ -18,6 +18,18 @@
   - `external`: engineering plus remote MCP integrations
   - `full`: all shared rules plus remote MCP integrations
 
+## Agent Output Discipline
+
+- Default to the shortest answer that preserves the decision, evidence, and next action.
+- Put the conclusion first, then include only the evidence needed to trust it.
+- Use at most three short headings in a final answer unless the user asks for a full report, audit, or plan.
+- Prefer one compact paragraph plus bullets only when listing concrete files, commands, findings, or next steps.
+- Omit sections that only restate the prompt, narrate process, or list expected negative findings.
+- Include "not found" findings only when they change the diagnosis, block the work, or contradict the user's assumption.
+- Collapse speculation into one ranked sentence when evidence is incomplete; do not list every possible cause.
+- Do not end with optional offers such as "If you want, I can..." unless the user explicitly asks for options.
+- For Datadog, Linear, GitHub, and command investigations, summarize the query or command scope and the actionable result; do not paste raw logs unless the raw line is the evidence.
+
 ## Datadog Investigation
 
 - When an `external` or `full` profile session is investigating production or staging behavior, use Datadog before guessing from code alone.

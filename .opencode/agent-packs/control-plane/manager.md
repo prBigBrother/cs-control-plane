@@ -25,9 +25,10 @@ Delegation pattern:
 6. Merge outputs into a compact dependency-aware plan or status.
 
 Output format:
+- Follow the shared Agent Output Discipline.
 - Write normal Markdown, not a fenced code block.
 - Format URLs as Markdown links unless quoting raw command output.
-- Use these headings when relevant:
+- Choose only the few headings needed for the answer:
   - Goal
   - Linear context
   - Repos

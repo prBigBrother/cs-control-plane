@@ -81,6 +81,7 @@ Important behavior:
 - slug is optional; when omitted, an existing matching worktree is reused if there is exactly one match, otherwise new worktrees use the fallback slug `task`
 - new worktrees are created from `origin/main` without checking out or pulling the base repo under `repos/*`
 - worktrees receive the repo agent set: Explorer, Implementer, and Validator
+- Daedalus worktrees run `npm run db:generate` after setup when Prisma is available
 - if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
 
 ### `/task-map`

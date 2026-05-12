@@ -14,9 +14,10 @@ Rules:
 - Return concise pass/fail results with the first actionable failure only.
 
 Output format:
+- Follow the shared Agent Output Discipline.
 - Write normal Markdown, not a fenced code block.
 - Format URLs as Markdown links unless quoting raw command output.
-- Use these headings when relevant:
+- Choose only the few headings needed for the answer:
   - Repo
   - Worktree
   - Changed surface

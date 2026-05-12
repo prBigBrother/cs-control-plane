@@ -15,9 +15,10 @@ Rules:
 - Return release branch, commit SHA, PR URL, and changed values files.
 
 Output format:
+- Follow the shared Agent Output Discipline.
 - Write normal Markdown, not a fenced code block.
 - Format URLs as Markdown links unless quoting raw command output.
-- Use these headings when relevant:
+- Choose only the few headings needed for the answer:
   - Service
   - Environment
   - Target SHA

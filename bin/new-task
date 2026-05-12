@@ -59,6 +59,23 @@ link_runtime_assets() {
   fi
 }
 
+run_post_setup() {
+  local repo="$1"
+  local worktree_path="$2"
+
+  if [ "$repo" != "daedalus" ]; then
+    return 0
+  fi
+
+  if [ ! -x "$worktree_path/node_modules/.bin/prisma" ]; then
+    echo "Warning: $worktree_path/node_modules/.bin/prisma is missing; skipping npm run db:generate." >&2
+    return 0
+  fi
+
+  echo "Generating Daedalus Prisma clients..."
+  (cd "$worktree_path" && npm run db:generate)
+}
+
 if [ "$#" -lt 2 ]; then
   echo "Usage: new-task <repo> <eng-id> [slug] [type]" >&2
   exit 1
@@ -110,6 +127,7 @@ BASE_REF="origin/main"
 if [ -f "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH" ]; then
   link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
   "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo >/dev/null
+  run_post_setup "$REPO" "$WORKTREE_PATH"
   echo "$WORKTREE_PATH"
   exit 0
 fi
@@ -123,5 +141,6 @@ fi
 link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
 
 "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo
+run_post_setup "$REPO" "$WORKTREE_PATH"
 
 echo "$WORKTREE_PATH"

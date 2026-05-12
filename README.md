@@ -61,6 +61,8 @@ Create worktrees:
 
 Rerunning `bin/new-task` for an existing worktree repairs these links and reinstalls the shared OpenCode config.
 
+For Daedalus worktrees, `bin/new-task` also runs `npm run db:generate` after setup when Prisma is available, so the generated Prisma clients are current before implementation starts.
+
 The slug is optional for task helpers. When omitted, existing worktrees are resolved by `ENG-<id>` if there is exactly one match.
 
 `bin/new-task` fetches `origin/main` and creates new worktrees from that remote ref without checking out or pulling the base submodule worktree. This keeps `repos/*` from drifting just because a task was started.
