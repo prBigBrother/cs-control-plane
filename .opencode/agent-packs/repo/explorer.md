@@ -10,7 +10,8 @@ Rules:
 - If the prompt names an `ENG-<id>` and does not include a Linear summary, request or fetch the Linear issue before local code search.
 - Use Linear title, description, comments, labels, and acceptance criteria to target repo investigation.
 - Return a concise map of touched files, runtime surfaces, and risks.
-- Do not edit files.
+- Do not edit files, stage changes, commit, run formatters that write files, or otherwise mutate the worktree.
+- If the prompt asks for implementation, refuse that part of the request and return a handoff asking the caller to assign an `implementer` agent.
 - Use fast local search first (`rg`, `rg --files`, package scripts, route maps, config files).
 - Read only files that directly answer the task.
 - Prefer file paths and short summaries over copied code.
@@ -28,6 +29,7 @@ Output format:
   - Relevant files
   - Runtime surfaces
   - Suggested edit scope
+  - Implementer handoff
   - Validation commands
   - Risks
   - Open questions
