@@ -116,6 +116,14 @@ Repo and worktree sessions also receive the shared helper scripts at `./.opencod
 
 The installer also links the control-plane `.envrc` into the target root and adds `/.envrc` to that repo's local git exclude file. This makes direnv-backed credentials and local service endpoints available when shells or tools start directly inside a repo or worktree. New targets still need the normal one-time `direnv allow`.
 
+If OpenCode shows a base repo session under `.git/modules/repos/<repo>` instead of `repos/<repo>`, embed the submodule Git directories locally:
+
+```bash
+./bin/repair-submodule-gitdirs
+```
+
+This embeds each initialized submodule Git directory at `repos/<repo>/.git` and retargets existing linked worktree gitfiles.
+
 Use the third argument to choose an agent set explicitly:
 
 ```bash

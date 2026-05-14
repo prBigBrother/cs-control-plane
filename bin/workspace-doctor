@@ -85,9 +85,18 @@ while IFS= read -r line; do
 
   status_line "- $path" "$state" "$sha"
 
+  if [ "$state" = "not initialized" ]; then
+    continue
+  fi
+
   if [ -d "$ROOT/$path" ]; then
     if [ -d "$ROOT/$path/.git" ]; then
-      status_line "  gitdir layout" "embedded" "expected absorbed submodule gitfile"
+      status_line "  gitdir layout" "embedded"
+    elif [ -f "$ROOT/$path/.git" ]; then
+      status_line "  gitdir layout" "absorbed" "run ./bin/repair-submodule-gitdirs to embed"
+    else
+      status_line "  gitdir layout" "broken" ".git entry is missing"
+      doctor_failed=1
     fi
 
     if git -C "$ROOT/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

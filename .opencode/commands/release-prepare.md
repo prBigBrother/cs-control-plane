@@ -12,4 +12,5 @@ Rules:
 - Operate through the `ops` worktree only.
 - Run `./bin/release-prepare <service> [environment]`.
 - Fail if `repos/ops` is dirty before the release worktree is created.
+- Ensure the release PR body includes the generated environment-parameter check, including any question asking for missing values or Vault confirmation.
 - Return the script output directly.

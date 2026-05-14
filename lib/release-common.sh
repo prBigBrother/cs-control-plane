@@ -155,6 +155,183 @@ release_commit_list() {
   git -C "$(release_repo_path "$root" "$service")" log --format="$format" "${old_sha}..${new_sha}"
 }
 
+release_env_names_for_ref() {
+  local root=$1
+  local service=$2
+  local ref=$3
+  local repo_path
+  repo_path=$(release_repo_path "$root" "$service")
+
+  git -C "$repo_path" grep -h -I -E 'process[.]env([.]|[[:space:]]*[[])|import[.]meta[.]env([.]|[[:space:]]*[[])|window[.]__ENV__([.]|[[:space:]]*[[])|env[(][[:space:]]*["'\''`]' "$ref" -- \
+    '*.js' '*.jsx' '*.ts' '*.tsx' '*.cjs' '*.mjs' 2>/dev/null \
+    | perl -ne '
+      while (/(?:process\.env|import\.meta\.env|window\.__ENV__)\.([A-Z][A-Z0-9_]*)/g) { print "$1\n" }
+      while (/(?:process\.env|import\.meta\.env|window\.__ENV__)\[\s*["'\''`]([A-Z][A-Z0-9_]*)["'\''`]\s*\]/g) { print "$1\n" }
+      while (/\benv\(\s*["'\''`]([A-Z][A-Z0-9_]*)["'\''`]/g) { print "$1\n" }
+    ' \
+    | grep -Ev '^(NODE_ENV|npm_package_version)$' \
+    | sort -u || true
+}
+
+release_new_env_names() {
+  local root=$1
+  local service=$2
+  local old_sha=$3
+  local new_sha=$4
+  local old_file
+  local new_file
+  old_file=$(mktemp)
+  new_file=$(mktemp)
+
+  release_env_names_for_ref "$root" "$service" "$old_sha" >"$old_file"
+  release_env_names_for_ref "$root" "$service" "$new_sha" >"$new_file"
+  comm -13 "$old_file" "$new_file"
+
+  rm -f "$old_file" "$new_file"
+}
+
+release_ops_configmap_keys() {
+  local root=$1
+  local service=$2
+  local environment=$3
+  local ops_path
+  local values_file
+  ops_path=$(release_ops_path "$root")
+  values_file=$(release_values_relpath "$service" "$environment")
+
+  git -C "$ops_path" show "origin/main:$values_file" 2>/dev/null | awk '
+    /^configMap:[[:space:]]*$/ { in_config = 1; next }
+    in_config && /^[^[:space:]]/ { in_config = 0 }
+    in_config && /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:/ {
+      key = $0
+      sub(/^[[:space:]]+/, "", key)
+      sub(/[[:space:]]*:.*/, "", key)
+      print key
+    }
+  ' | sort -u
+}
+
+release_vault_secret_path() {
+  local root=$1
+  local service=$2
+  local environment=$3
+  local ops_path
+  local values_file
+  local secret_path
+  ops_path=$(release_ops_path "$root")
+  values_file=$(release_values_relpath "$service" "$environment")
+
+  if [ "$service" = "daedalus" ]; then
+    secret_path=$(git -C "$ops_path" show "origin/main:$values_file" 2>/dev/null | awk '
+      /^secretPath:[[:space:]]*/ {
+        value = $0
+        sub(/^secretPath:[[:space:]]*/, "", value)
+        gsub(/["'\''\r]/, "", value)
+        print value
+        exit
+      }
+    ')
+    if [ -n "$secret_path" ]; then
+      echo "app/$secret_path/daedalus"
+      return 0
+    fi
+  fi
+
+  git -C "$ops_path" show "origin/main:$values_file" 2>/dev/null | awk '
+    /^vault:[[:space:]]*$/ { in_vault = 1; next }
+    in_vault && /^[^[:space:]]/ { in_vault = 0 }
+    in_vault && /^[[:space:]]+secretspath:[[:space:]]*/ {
+      value = $0
+      sub(/^[[:space:]]+secretspath:[[:space:]]*/, "", value)
+      gsub(/["'\''\r]/, "", value)
+      print value
+      exit
+    }
+  '
+}
+
+release_append_env_report_for_environment() {
+  local root=$1
+  local service=$2
+  local old_sha=$3
+  local new_sha=$4
+  local environment=$5
+  local target_file=$6
+  local env_file
+  local configmap_file
+  local vault_path
+  local env_name
+  local has_missing=0
+
+  env_file=$(mktemp)
+  configmap_file=$(mktemp)
+  release_new_env_names "$root" "$service" "$old_sha" "$new_sha" >"$env_file"
+  release_ops_configmap_keys "$root" "$service" "$environment" >"$configmap_file"
+  vault_path=$(release_vault_secret_path "$root" "$service" "$environment")
+
+  {
+    echo ""
+    echo "### $environment"
+    if [ ! -s "$env_file" ]; then
+      echo ""
+      echo "No new environment parameters detected for $environment."
+    else
+      echo ""
+      echo "| Name | Current ops coverage | Release action |"
+      echo "|---|---|---|"
+      while IFS= read -r env_name; do
+        [ -n "$env_name" ] || continue
+        if grep -qxF "$env_name" "$configmap_file"; then
+          printf '| `%s` | `configMap` in `%s` | Confirm the existing configured value is valid for this release. |\n' "$env_name" "$(release_values_relpath "$service" "$environment")"
+        else
+          has_missing=1
+          if [ -n "$vault_path" ]; then
+            printf '| `%s` | Not present in ops `configMap`; Vault is extracted from `%s` | Provide the non-secret value to add to ops, or confirm/add the secret in Vault before merge. |\n' "$env_name" "$vault_path"
+          else
+            printf '| `%s` | Not present in ops `configMap`; no Vault path detected | Provide the value and where it should be populated before merge. |\n' "$env_name"
+          fi
+        fi
+      done <"$env_file"
+      if [ "$has_missing" -ne 0 ]; then
+        echo ""
+        echo "**Release question:** Which of the new parameters above should be populated in ops values, and which have already been added through the secret vault? Provide the required values or Vault confirmation before merging."
+      fi
+    fi
+  } >>"$target_file"
+
+  rm -f "$env_file" "$configmap_file"
+}
+
+release_append_env_report() {
+  local root=$1
+  local service=$2
+  local new_sha=$3
+  local environment=$4
+  local target_file=$5
+  local staging_old_sha=$6
+  local production_old_sha=$7
+
+  {
+    echo ""
+    echo "## Environment Parameters"
+    echo ""
+    echo "This compares newly referenced environment parameters in the app code against the currently deployed SHA. Vault contents cannot be inspected here, so secret-backed additions require explicit confirmation."
+  } >>"$target_file"
+
+  case "$environment" in
+    staging)
+      release_append_env_report_for_environment "$root" "$service" "$staging_old_sha" "$new_sha" staging "$target_file"
+      ;;
+    production)
+      release_append_env_report_for_environment "$root" "$service" "$production_old_sha" "$new_sha" production "$target_file"
+      ;;
+    both)
+      release_append_env_report_for_environment "$root" "$service" "$staging_old_sha" "$new_sha" staging "$target_file"
+      release_append_env_report_for_environment "$root" "$service" "$production_old_sha" "$new_sha" production "$target_file"
+      ;;
+  esac
+}
+
 release_changed_files() {
   local service=$1
   local environment=$2
@@ -324,6 +501,8 @@ EOF
       fi
       ;;
   esac
+
+  release_append_env_report "$root" "$service" "$new_sha" "$environment" "$target_file" "$staging_old_sha" "$production_old_sha"
 }
 
 release_print_pr_content() {

@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DRY_RUN=0
+paths=()
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: repair-submodule-gitdirs [--dry-run] [submodule-path ...]
+
+Embed absorbed submodule Git directories into the submodule checkout itself,
+and retarget linked worktree .git files.
+
+When no submodule paths are passed, every path from .gitmodules is repaired.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        paths+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      paths+=("$1")
+      shift
+      ;;
+  esac
+done
+
+abs_existing_path() {
+  local path="$1"
+  local dir
+  local base
+
+  dir="$(dirname "$path")"
+  base="$(basename "$path")"
+  printf '%s/%s\n' "$(cd "$dir" && pwd -P)" "$base"
+}
+
+resolve_path_from() {
+  local base_dir="$1"
+  local path="$2"
+
+  case "$path" in
+    /*) abs_existing_path "$path" ;;
+    *) abs_existing_path "$base_dir/$path" ;;
+  esac
+}
+
+load_default_paths() {
+  if [ ! -f "$ROOT/.gitmodules" ]; then
+    echo "No .gitmodules file found at $ROOT/.gitmodules" >&2
+    exit 1
+  fi
+
+  while IFS=' ' read -r _ path; do
+    [ -n "${path:-}" ] || continue
+    paths+=("$path")
+  done < <(git -C "$ROOT" config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sort)
+}
+
+repair_submodule() {
+  local submodule_path="$1"
+  local target="$ROOT/$submodule_path"
+  local git_entry="$target/.git"
+  local pointer_file="$git_entry"
+  local gitdir_line
+  local old_gitdir
+  local new_gitdir
+  local tmp_gitdir
+  local saved_gitfile
+  local updated_worktrees=0
+  local skipped_worktrees=0
+  local worktree_admin
+  local worktree_name
+  local worktree_gitfile
+  local new_worktree_gitdir
+  local pairs=()
+  local pair
+
+  if [ ! -d "$target" ]; then
+    echo "- $submodule_path: skipped - checkout directory is missing"
+    return 0
+  fi
+
+  if [ -d "$git_entry" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "- $submodule_path: already embedded"
+    else
+      git --git-dir="$git_entry" --work-tree="$target" config --unset core.worktree 2>/dev/null || true
+      echo "- $submodule_path: already embedded"
+    fi
+    return 0
+  fi
+
+  saved_gitfile="$target/.git.absorbed-gitfile"
+  if [ ! -f "$pointer_file" ] && [ -f "$saved_gitfile" ]; then
+    pointer_file="$saved_gitfile"
+  fi
+
+  if [ ! -f "$pointer_file" ]; then
+    echo "- $submodule_path: skipped - .git is neither a file nor a directory, and no saved gitfile exists" >&2
+    return 1
+  fi
+
+  gitdir_line="$(sed -n 's/^gitdir: //p' "$pointer_file")"
+  if [ -z "$gitdir_line" ]; then
+    echo "- $submodule_path: skipped - gitfile does not contain a gitdir pointer: $pointer_file" >&2
+    return 1
+  fi
+
+  old_gitdir="$(resolve_path_from "$target" "$gitdir_line")"
+  new_gitdir="$target/.git"
+  tmp_gitdir="$target/.git.embedtmp.$$"
+
+  if [ ! -d "$old_gitdir" ]; then
+    echo "- $submodule_path: skipped - gitdir does not exist: $old_gitdir" >&2
+    return 1
+  fi
+
+  if [ -e "$saved_gitfile" ]; then
+    if [ "$pointer_file" = "$saved_gitfile" ]; then
+      :
+    else
+      echo "- $submodule_path: skipped - temporary file already exists: $saved_gitfile" >&2
+      return 1
+    fi
+  fi
+
+  if [ -e "$new_gitdir" ] && [ "$pointer_file" != "$new_gitdir" ]; then
+    echo "- $submodule_path: skipped - embedded gitdir already exists: $new_gitdir" >&2
+    return 1
+  fi
+
+  if [ -e "$tmp_gitdir" ]; then
+    echo "- $submodule_path: skipped - temporary gitdir already exists: $tmp_gitdir" >&2
+    return 1
+  fi
+
+  if [ -d "$old_gitdir/worktrees" ]; then
+    while IFS= read -r worktree_admin; do
+      [ -n "$worktree_admin" ] || continue
+      worktree_name="$(basename "$worktree_admin")"
+      if [ ! -f "$worktree_admin/gitdir" ]; then
+        continue
+      fi
+
+      worktree_gitfile="$(sed -n '1p' "$worktree_admin/gitdir")"
+      new_worktree_gitdir="$new_gitdir/worktrees/$worktree_name"
+      pairs+=("$worktree_gitfile"$'\t'"$new_worktree_gitdir")
+    done < <(find "$old_gitdir/worktrees" -mindepth 1 -maxdepth 1 -type d | sort)
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "- $submodule_path: would copy $old_gitdir -> $new_gitdir"
+    echo "  leave absorbed gitdir in place: $old_gitdir"
+    for pair in "${pairs[@]}"; do
+      worktree_gitfile="${pair%%$'\t'*}"
+      new_worktree_gitdir="${pair#*$'\t'}"
+      if [ -f "$worktree_gitfile" ]; then
+        echo "  retarget worktree gitfile: $worktree_gitfile -> $new_worktree_gitdir"
+      else
+        echo "  skip missing worktree gitfile: $worktree_gitfile"
+      fi
+    done
+    return 0
+  fi
+
+  if ! mkdir "$tmp_gitdir"; then
+    echo "- $submodule_path: failed to create temporary gitdir: $tmp_gitdir" >&2
+    return 1
+  fi
+
+  if ! cp -pR "$old_gitdir/." "$tmp_gitdir/"; then
+    echo "- $submodule_path: failed to copy $old_gitdir into $tmp_gitdir" >&2
+    return 1
+  fi
+
+  if [ "$pointer_file" = "$git_entry" ]; then
+    if ! mv "$git_entry" "$saved_gitfile"; then
+      echo "- $submodule_path: failed to save original gitfile pointer" >&2
+      return 1
+    fi
+    pointer_file="$saved_gitfile"
+  fi
+
+  if ! mv "$tmp_gitdir" "$new_gitdir"; then
+    echo "- $submodule_path: failed to install embedded gitdir: $new_gitdir" >&2
+    return 1
+  fi
+
+  if ! mv "$pointer_file" "$new_gitdir/absorbed-gitfile"; then
+    echo "- $submodule_path: failed to save original gitfile pointer" >&2
+    return 1
+  fi
+
+  git --git-dir="$new_gitdir" --work-tree="$target" config --unset core.worktree 2>/dev/null || true
+
+  for pair in "${pairs[@]}"; do
+    worktree_gitfile="${pair%%$'\t'*}"
+    new_worktree_gitdir="${pair#*$'\t'}"
+    if [ -f "$worktree_gitfile" ]; then
+      printf 'gitdir: %s\n' "$new_worktree_gitdir" > "$worktree_gitfile"
+      updated_worktrees=$((updated_worktrees + 1))
+    else
+      skipped_worktrees=$((skipped_worktrees + 1))
+    fi
+  done
+
+  if ! git -C "$target" rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "- $submodule_path: repaired but git validation failed" >&2
+    return 1
+  fi
+
+  if [ "$skipped_worktrees" -gt 0 ]; then
+    echo "- $submodule_path: embedded - retargeted $updated_worktrees worktree(s), skipped $skipped_worktrees missing worktree gitfile(s)"
+  else
+    echo "- $submodule_path: embedded - retargeted $updated_worktrees worktree(s)"
+  fi
+}
+
+if [ "${#paths[@]}" -eq 0 ]; then
+  load_default_paths
+fi
+
+failed=0
+for path in "${paths[@]}"; do
+  repair_submodule "$path" || failed=1
+done
+
+exit "$failed"

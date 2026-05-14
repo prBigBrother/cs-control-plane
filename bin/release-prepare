@@ -191,6 +191,7 @@ COMMIT_SHA=$(git -C "$RELEASE_WORKTREE_PATH" rev-parse HEAD)
 if [ -n "$EXISTING_PR_URL" ]; then
   git -C "$RELEASE_WORKTREE_PATH" push --force-with-lease -u origin "$RELEASE_BRANCH" >/dev/null
   PR_URL="$EXISTING_PR_URL"
+  gh pr edit "$PR_URL" --title "$PR_TITLE" --body-file "$BODY_FILE" >/dev/null
 else
   git -C "$RELEASE_WORKTREE_PATH" push -u origin "$RELEASE_BRANCH" >/dev/null
   PR_URL=$(gh pr create --repo citizenshipper/ops --base main --head "$RELEASE_BRANCH" --title "$PR_TITLE" --body-file "$BODY_FILE")

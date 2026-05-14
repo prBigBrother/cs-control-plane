@@ -12,6 +12,7 @@ Rules:
 - Prefer `./bin/compare`, `./bin/release-prepare`, `./bin/new-release`, and `./bin/release-pr-body` over ad hoc git commands.
 - Do not edit app repositories.
 - Fail early on dirty `repos/ops` state unless the user explicitly asks to inspect it.
+- Do not remove or bypass the release PR environment-parameter check; newly detected env params must be surfaced with a request for ops values or Vault confirmation.
 - Return release branch, commit SHA, PR URL, and changed values files.
 
 Output format:
@@ -24,6 +25,7 @@ Output format:
   - Target SHA
   - Ops worktree
   - Changed files
+  - Environment parameters
   - Commit
   - PR
   - Validation
