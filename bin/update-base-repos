@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BRANCH="main"
+FORCE=0
+CLEAN=0
+DRY_RUN=0
+STAGE_POINTERS=0
+paths=()
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: update-base-repos [options] [submodule-path ...]
+
+Fetch origin and reset base submodule checkouts to origin/<branch>.
+When no paths are passed, every submodule from .gitmodules is updated.
+
+Options:
+  --branch <name>     Remote branch to track. Default: main
+  --force             Allow discarding local tracked changes and local commits
+  --clean             Also remove untracked files and directories. Requires --force
+  --stage-pointers    Stage updated submodule gitlinks in the control-plane repo
+  --dry-run           Print planned actions without changing anything
+  -h, --help          Show this help
+
+Without --force, dirty submodule checkouts are refused.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --branch)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --branch" >&2
+        exit 2
+      fi
+      BRANCH="$2"
+      shift 2
+      ;;
+    --force)
+      FORCE=1
+      shift
+      ;;
+    --clean)
+      CLEAN=1
+      shift
+      ;;
+    --stage-pointers)
+      STAGE_POINTERS=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        paths+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      paths+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ "$CLEAN" -eq 1 ] && [ "$FORCE" -ne 1 ]; then
+  echo "--clean requires --force" >&2
+  exit 2
+fi
+
+load_default_paths() {
+  if [ ! -f "$ROOT/.gitmodules" ]; then
+    echo "No .gitmodules file found at $ROOT/.gitmodules" >&2
+    exit 1
+  fi
+
+  while IFS=' ' read -r _ path; do
+    [ -n "${path:-}" ] || continue
+    paths+=("$path")
+  done < <(git -C "$ROOT" config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sort)
+}
+
+short_sha() {
+  local repo_path="$1"
+  local ref="$2"
+
+  git -C "$repo_path" rev-parse --short "$ref" 2>/dev/null || printf 'unknown'
+}
+
+update_repo() {
+  local path="$1"
+  local repo_path="$ROOT/$path"
+  local dirty=""
+  local before="unknown"
+  local after="unknown"
+
+  if [ ! -d "$repo_path" ]; then
+    echo "- $path: skipped - directory is missing"
+    return 0
+  fi
+
+  if ! git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "- $path: failed - not a git worktree" >&2
+    return 1
+  fi
+
+  before="$(short_sha "$repo_path" HEAD)"
+  dirty="$(git -C "$repo_path" status --short)"
+  if [ -n "$dirty" ] && [ "$FORCE" -ne 1 ]; then
+    echo "- $path: refused - checkout is dirty; rerun with --force to discard tracked changes" >&2
+    printf '%s\n' "$dirty" | sed 's/^/  /' >&2
+    return 1
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    after="$(short_sha "$repo_path" "origin/$BRANCH")"
+    echo "- $path: would fetch origin $BRANCH and reset $before -> origin/$BRANCH (currently cached: $after)"
+    if [ "$CLEAN" -eq 1 ]; then
+      echo "  would remove untracked files with git clean -fd"
+    fi
+    if [ "$STAGE_POINTERS" -eq 1 ]; then
+      echo "  would stage control-plane gitlink for $path"
+    fi
+    return 0
+  fi
+
+  git -C "$repo_path" fetch origin "$BRANCH"
+  if ! git -C "$repo_path" rev-parse --verify "refs/remotes/origin/$BRANCH" >/dev/null 2>&1; then
+    echo "- $path: failed - origin/$BRANCH does not exist" >&2
+    return 1
+  fi
+
+  git -C "$repo_path" checkout -B "$BRANCH" "origin/$BRANCH"
+  git -C "$repo_path" reset --hard "origin/$BRANCH"
+  if [ "$CLEAN" -eq 1 ]; then
+    git -C "$repo_path" clean -fd
+  fi
+
+  after="$(short_sha "$repo_path" HEAD)"
+  echo "- $path: reset $before -> $after on $BRANCH"
+
+  if [ "$STAGE_POINTERS" -eq 1 ]; then
+    git -C "$ROOT" add "$path"
+    echo "  staged control-plane gitlink"
+  fi
+}
+
+if [ "${#paths[@]}" -eq 0 ]; then
+  load_default_paths
+fi
+
+failed=0
+for path in "${paths[@]}"; do
+  update_repo "$path" || failed=1
+done
+
+if [ "$DRY_RUN" -ne 1 ] && [ "$STAGE_POINTERS" -ne 1 ]; then
+  echo
+  echo "Note: updated submodule commits may make the control-plane repo show gitlink changes."
+  echo "Use --stage-pointers when you intentionally want to commit those pointer updates."
+fi
+
+exit "$failed"

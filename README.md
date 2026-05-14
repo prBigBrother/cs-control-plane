@@ -158,6 +158,15 @@ Check workspace health:
 
 This reports control-plane dirtiness, submodule pointer drift, worktree status, runtime link state, and installed agent counts.
 
+Refresh all base submodule checkouts to `origin/main`:
+
+```bash
+./bin/update-base-repos --dry-run
+./bin/update-base-repos --force
+```
+
+This is intended for keeping `repos/*` base checkouts current. It hard-resets each submodule to `origin/main`; add `--stage-pointers` when you also want to commit the updated control-plane gitlinks.
+
 Start or stop the local OpenChamber + Slim route:
 
 ```bash
