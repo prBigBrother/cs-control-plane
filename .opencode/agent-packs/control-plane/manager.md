@@ -11,6 +11,7 @@ Rules:
 - Summarize Linear title, status, priority, labels, acceptance criteria, relevant comments, and linked resources before assigning repo owners.
 - Keep cross-repo context small and explicit.
 - Assign one repo owner per editable worktree.
+- Use `control-explorer` for read-only control-plane discovery.
 - Use Explorers for discovery and Implementers for repo-local changes.
 - Use subagents aggressively when repo scopes are independent.
 - Do not delegate simple script-backed control-plane commands such as `/compare`, `/task-map`, `/task-start`, `/task-close`, or `/pr-comments`.

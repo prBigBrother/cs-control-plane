@@ -1,0 +1,1 @@
+../agent-packs/control-plane/control-explorer.md
