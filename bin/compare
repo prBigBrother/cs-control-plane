@@ -38,6 +38,7 @@ fi
 
 DEPLOYED_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$DEPLOYED_SHA")
 TARGET_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$TARGET_SHA")
+REPO_PATH=$(release_repo_path "$ROOT" "$SERVICE")
 
 echo "Service:      $SERVICE"
 echo "Environment:  $ENVIRONMENT"
@@ -50,5 +51,24 @@ if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ]; then
   exit 0
 fi
 
-echo "Commits ($DEPLOYED_SHORT..$TARGET_SHORT):"
+if git -C "$REPO_PATH" merge-base --is-ancestor "$DEPLOYED_SHA" "$TARGET_SHA"; then
+  echo "Commits to deploy ($DEPLOYED_SHORT..$TARGET_SHORT):"
+  release_commit_list "$ROOT" "$SERVICE" "$DEPLOYED_SHA" "$TARGET_SHA" '- `%h` %s (%an <%ae>)'
+  exit 0
+fi
+
+if git -C "$REPO_PATH" merge-base --is-ancestor "$TARGET_SHA" "$DEPLOYED_SHA"; then
+  echo "Target is behind deployed."
+  echo ""
+  echo "Commits deployed but absent from $TARGET_LABEL ($TARGET_SHORT..$DEPLOYED_SHORT):"
+  release_commit_list "$ROOT" "$SERVICE" "$TARGET_SHA" "$DEPLOYED_SHA" '- `%h` %s (%an <%ae>)'
+  exit 0
+fi
+
+echo "Target and deployed histories have diverged."
+echo ""
+echo "Commits in $TARGET_LABEL but not deployed ($DEPLOYED_SHORT..$TARGET_SHORT):"
 release_commit_list "$ROOT" "$SERVICE" "$DEPLOYED_SHA" "$TARGET_SHA" '- `%h` %s (%an <%ae>)'
+echo ""
+echo "Commits deployed but absent from $TARGET_LABEL ($TARGET_SHORT..$DEPLOYED_SHORT):"
+release_commit_list "$ROOT" "$SERVICE" "$TARGET_SHA" "$DEPLOYED_SHA" '- `%h` %s (%an <%ae>)'
