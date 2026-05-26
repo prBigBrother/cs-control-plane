@@ -3,7 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+HOST="${OPENCHAMBER_HOST:-127.0.0.1}"
 PORT="${OPENCHAMBER_PORT:-9999}"
+OPENCODE_BIND_HOST="${OPENCHAMBER_OPENCODE_HOSTNAME:-$HOST}"
+OPENCODE_EXTERNAL_HOST="${OPENCODE_HOST:-}"
+OPENCODE_EXTERNAL_PORT="${OPENCODE_PORT:-}"
+OPENCODE_EXTERNAL_SKIP_START="${OPENCODE_SKIP_START:-}"
 DOMAIN="${SLIM_OPENCODE_DOMAIN:-opencode.test}"
 SLIM_CONFIG="${SLIM_CONFIG:-$ROOT/.slim.yaml}"
 
@@ -21,15 +26,15 @@ require_command() {
   fi
 }
 
-openchamber_running_on_port() {
+openchamber_running_on_host_port() {
   local status_output
 
   status_output="$(openchamber status 2>/dev/null || true)"
-  if printf '%s\n' "$status_output" | grep -Eq "port[[:space:]]+$PORT|:$PORT([^0-9]|$)|127\\.0\\.0\\.1:$PORT|localhost:$PORT"; then
+  if printf '%s\n' "$status_output" | grep -Eq "port[[:space:]]+$PORT|:$PORT([^0-9]|$)|127\\.0\\.0\\.1:$PORT|localhost:$PORT|0\\.0\\.0\\.0:$PORT"; then
     return 0
   fi
 
-  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -qi openchamber; then
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -Eqi 'openchamb|openchamber'; then
     return 0
   fi
 
@@ -51,17 +56,40 @@ slim_ready() {
 up() {
   require_command openchamber
   require_command slim
+  export OPENCHAMBER_HOST="$HOST"
+  export OPENCHAMBER_OPENCODE_HOSTNAME="$OPENCODE_BIND_HOST"
 
-  if openchamber_running_on_port; then
-    echo "OpenChamber already running on port $PORT"
+  if [ -n "$OPENCODE_EXTERNAL_HOST" ]; then
+    export OPENCODE_HOST="$OPENCODE_EXTERNAL_HOST"
+  fi
+
+  if [ -n "$OPENCODE_EXTERNAL_PORT" ]; then
+    export OPENCODE_PORT="$OPENCODE_EXTERNAL_PORT"
+  fi
+
+  if [ -n "$OPENCODE_EXTERNAL_SKIP_START" ]; then
+    export OPENCODE_SKIP_START="$OPENCODE_EXTERNAL_SKIP_START"
+  fi
+
+  if openchamber_running_on_host_port; then
+    echo "OpenChamber already running on $HOST:$PORT"
   else
     if [ -z "${OPENCHAMBER_PASSWORD:-}" ]; then
       echo "Error: OPENCHAMBER_PASSWORD is required to start OpenChamber" >&2
       exit 3
     fi
 
-    echo "Starting OpenChamber on port $PORT"
-    openchamber --port "$PORT" --ui-password "$OPENCHAMBER_PASSWORD"
+    echo "Starting OpenChamber on $HOST:$PORT"
+    if [ -n "$OPENCODE_EXTERNAL_HOST" ]; then
+      echo "Using external OpenCode host $OPENCODE_EXTERNAL_HOST"
+      if [ -n "$OPENCODE_EXTERNAL_PORT" ]; then
+        echo "Using external OpenCode port $OPENCODE_EXTERNAL_PORT"
+      fi
+    else
+      echo "Managed OpenCode will bind on $OPENCODE_BIND_HOST"
+    fi
+
+    openchamber --host "$HOST" --port "$PORT" --ui-password "$OPENCHAMBER_PASSWORD"
   fi
 
   if slim_ready; then
@@ -87,16 +115,25 @@ status() {
   require_command openchamber
   require_command slim
 
-  if openchamber_running_on_port; then
-    echo "OpenChamber: running on port $PORT"
+  if openchamber_running_on_host_port; then
+    echo "OpenChamber: running on $HOST:$PORT"
   else
-    echo "OpenChamber: not running on port $PORT"
+    echo "OpenChamber: not running on $HOST:$PORT"
   fi
 
   if slim_ready; then
     echo "Slim: $DOMAIN -> $PORT is running"
   else
     echo "Slim: $DOMAIN -> $PORT is not ready"
+  fi
+
+  if [ -n "$OPENCODE_EXTERNAL_HOST" ]; then
+    echo "OpenCode: external host $OPENCODE_EXTERNAL_HOST"
+    if [ -n "$OPENCODE_EXTERNAL_PORT" ]; then
+      echo "OpenCode: external port $OPENCODE_EXTERNAL_PORT"
+    fi
+  else
+    echo "OpenCode: managed bind $OPENCODE_BIND_HOST"
   fi
 }
 

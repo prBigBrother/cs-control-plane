@@ -11,3 +11,4 @@ worktrees/*
 !worktrees/.gitkeep
 tmp/*
 !tmp/.gitkeep
+.clauge-worktrees/
