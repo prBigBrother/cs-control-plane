@@ -57,8 +57,8 @@ release_require_initialized_repos() {
 release_fetch_origin() {
   local root=$1
   local service=$2
-  git -C "$(release_repo_path "$root" "$service")" fetch origin >/dev/null
-  git -C "$(release_ops_path "$root")" fetch origin >/dev/null
+  git -C "$(release_repo_path "$root" "$service")" fetch --quiet origin
+  git -C "$(release_ops_path "$root")" fetch --quiet origin
 }
 
 release_values_relpath() {

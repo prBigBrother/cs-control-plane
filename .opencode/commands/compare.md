@@ -11,4 +11,4 @@ Usage:
 Rules:
 - Run `./bin/compare <service> <environment> [target-sha]`.
 - Accept `prod` as an alias for `production`.
-- Return the script output directly.
+- Return the script's Markdown summary directly.

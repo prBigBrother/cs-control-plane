@@ -1,6 +1,6 @@
 ---
-description: Use for read-only investigation inside one repo/worktree before implementation.
-mode: subagent
+description: Use by default for read-only investigation inside one repo/worktree before implementation.
+mode: all
 steps: 8
 temperature: 0.1
 permission:

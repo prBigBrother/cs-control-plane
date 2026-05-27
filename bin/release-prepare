@@ -72,7 +72,7 @@ release_reset_remote_branch() {
     return 0
   fi
 
-  git -C "$(release_ops_path "$ROOT")" push origin --delete "$branch" >/dev/null
+  git -C "$(release_ops_path "$ROOT")" push --quiet origin --delete "$branch"
 }
 
 release_worktree_value_file() {
@@ -189,18 +189,27 @@ PR_TITLE=$(release_pr_title "$ROOT" "$SERVICE" "$TARGET_SHA")
 git -C "$RELEASE_WORKTREE_PATH" commit -m "$COMMIT_MESSAGE" >/dev/null
 COMMIT_SHA=$(git -C "$RELEASE_WORKTREE_PATH" rev-parse HEAD)
 if [ -n "$EXISTING_PR_URL" ]; then
-  git -C "$RELEASE_WORKTREE_PATH" push --force-with-lease -u origin "$RELEASE_BRANCH" >/dev/null
+  git -C "$RELEASE_WORKTREE_PATH" push --quiet --force-with-lease -u origin "$RELEASE_BRANCH"
   PR_URL="$EXISTING_PR_URL"
   gh pr edit "$PR_URL" --title "$PR_TITLE" --body-file "$BODY_FILE" >/dev/null
 else
-  git -C "$RELEASE_WORKTREE_PATH" push -u origin "$RELEASE_BRANCH" >/dev/null
+  git -C "$RELEASE_WORKTREE_PATH" push --quiet -u origin "$RELEASE_BRANCH"
   PR_URL=$(gh pr create --repo citizenshipper/ops --base main --head "$RELEASE_BRANCH" --title "$PR_TITLE" --body-file "$BODY_FILE")
 fi
 
-echo "Release worktree: $RELEASE_WORKTREE_PATH"
-echo "Branch: $RELEASE_BRANCH"
-echo "Target SHA: $TARGET_SHA"
-echo "Changed files:"
-printf '%s\n' "$EXPECTED_FILES"
-echo "Commit SHA: $COMMIT_SHA"
-echo "PR URL: $PR_URL"
+echo "## Release PR"
+echo
+echo "- Service: \`$SERVICE\`"
+echo "- Environment: \`$ENVIRONMENT\`"
+echo "- Worktree: \`$RELEASE_WORKTREE_PATH\`"
+echo "- Branch: \`$RELEASE_BRANCH\`"
+echo "- Target SHA: \`$TARGET_SHA\`"
+echo "- Commit SHA: \`$COMMIT_SHA\`"
+echo "- PR: $PR_URL"
+echo
+echo "## Changed Files"
+echo
+while IFS= read -r relpath; do
+  [ -n "$relpath" ] || continue
+  echo "- \`$relpath\`"
+done < <(printf '%s\n' "$EXPECTED_FILES")

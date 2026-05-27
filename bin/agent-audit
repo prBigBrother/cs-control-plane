@@ -12,7 +12,7 @@ Usage: agent-audit [--verbose]
 Audits OpenCode agent and profile token-efficiency guardrails.
 
 Checks:
-- agent files have description, non-all mode, permission, and steps
+- agent files have description, scoped mode, permission, and steps
 - repeated output-format boilerplate has not returned
 - OpenCode JSON profiles parse
 - Linear and Datadog MCPs are enabled but hidden globally
@@ -75,7 +75,14 @@ for file in "${agent_files[@]}"; do
   agent_words=$((agent_words + words))
 
   frontmatter_has "$file" '^description:' || fail "$rel missing description"
-  frontmatter_has "$file" '^mode: (primary|subagent)$' || fail "$rel should use mode primary or subagent"
+  case "$rel" in
+    .opencode/agent-packs/repo/explorer.md)
+      frontmatter_has "$file" '^mode: all$' || fail "$rel should use mode all so engineering can default to explorer while manager can delegate to it"
+      ;;
+    *)
+      frontmatter_has "$file" '^mode: (primary|subagent)$' || fail "$rel should use mode primary or subagent"
+      ;;
+  esac
   frontmatter_has "$file" '^steps:' || fail "$rel missing steps"
   frontmatter_has "$file" '^permission:' || fail "$rel missing permission"
 
@@ -125,6 +132,11 @@ for profile in opencode.json opencode.migration.json; do
     fi
   done
 done
+
+default_agent="$(jq -r '.default_agent // empty' "$ROOT/opencode.json")"
+if [ "$default_agent" != "explorer" ]; then
+  fail "opencode.json should set default_agent to explorer"
+fi
 
 if ! frontmatter_has "$ROOT/.opencode/agent-packs/common/linear-operator.md" '^  linear_\*: true$'; then
   fail "linear-operator should enable linear_* tools"

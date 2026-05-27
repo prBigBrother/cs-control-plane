@@ -40,35 +40,75 @@ DEPLOYED_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$DEPLOYED_SHA")
 TARGET_SHORT=$(release_short_sha "$ROOT" "$SERVICE" "$TARGET_SHA")
 REPO_PATH=$(release_repo_path "$ROOT" "$SERVICE")
 
-echo "Service:      $SERVICE"
-echo "Environment:  $ENVIRONMENT"
-echo "Deployed:     $DEPLOYED_SHA"
-echo "$TARGET_LABEL:         $TARGET_SHA"
+commit_count() {
+  local old_sha=$1
+  local new_sha=$2
+  git -C "$REPO_PATH" rev-list --count "${old_sha}..${new_sha}"
+}
+
+print_summary() {
+  echo "## Compare"
+  echo
+  echo "- Service: \`$SERVICE\`"
+  echo "- Environment: \`$ENVIRONMENT\`"
+  echo "- Deployed: \`$DEPLOYED_SHA\` (\`$DEPLOYED_SHORT\`)"
+  echo "- ${TARGET_LABEL}: \`$TARGET_SHA\` (\`$TARGET_SHORT\`)"
+}
+
+print_commit_list() {
+  local old_sha=$1
+  local new_sha=$2
+  release_commit_list "$ROOT" "$SERVICE" "$old_sha" "$new_sha" '- `%h` %s'
+}
+
+print_summary
 echo ""
 
 if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ]; then
-  echo "No commits between deployed $DEPLOYED_SHORT and $TARGET_LABEL $TARGET_SHORT."
+  echo "## Result"
+  echo
+  echo "- No deployment needed. Deployed and ${TARGET_LABEL} point to the same commit."
   exit 0
 fi
 
 if git -C "$REPO_PATH" merge-base --is-ancestor "$DEPLOYED_SHA" "$TARGET_SHA"; then
-  echo "Commits to deploy ($DEPLOYED_SHORT..$TARGET_SHORT):"
-  release_commit_list "$ROOT" "$SERVICE" "$DEPLOYED_SHA" "$TARGET_SHA" '- `%h` %s (%an <%ae>)'
+  count=$(commit_count "$DEPLOYED_SHA" "$TARGET_SHA")
+  echo "## Result"
+  echo
+  echo "- ${TARGET_LABEL} is ahead of deployed by $count commit(s)."
+  echo
+  echo "## Commits to deploy"
+  echo
+  print_commit_list "$DEPLOYED_SHA" "$TARGET_SHA"
   exit 0
 fi
 
 if git -C "$REPO_PATH" merge-base --is-ancestor "$TARGET_SHA" "$DEPLOYED_SHA"; then
-  echo "Target is behind deployed."
+  count=$(commit_count "$TARGET_SHA" "$DEPLOYED_SHA")
+  echo "## Result"
   echo ""
-  echo "Commits deployed but absent from $TARGET_LABEL ($TARGET_SHORT..$DEPLOYED_SHORT):"
-  release_commit_list "$ROOT" "$SERVICE" "$TARGET_SHA" "$DEPLOYED_SHA" '- `%h` %s (%an <%ae>)'
+  echo "- ${TARGET_LABEL} is behind deployed by $count commit(s)."
+  echo
+  echo "## Commits already deployed"
+  echo
+  print_commit_list "$TARGET_SHA" "$DEPLOYED_SHA"
   exit 0
 fi
 
-echo "Target and deployed histories have diverged."
+target_only_count=$(commit_count "$DEPLOYED_SHA" "$TARGET_SHA")
+deployed_only_count=$(commit_count "$TARGET_SHA" "$DEPLOYED_SHA")
+
+echo "## Result"
 echo ""
-echo "Commits in $TARGET_LABEL but not deployed ($DEPLOYED_SHORT..$TARGET_SHORT):"
-release_commit_list "$ROOT" "$SERVICE" "$DEPLOYED_SHA" "$TARGET_SHA" '- `%h` %s (%an <%ae>)'
+echo "- Target and deployed histories have diverged."
+echo "- ${TARGET_LABEL} has $target_only_count commit(s) not deployed."
+echo "- Deployed has $deployed_only_count commit(s) absent from ${TARGET_LABEL}."
+
 echo ""
-echo "Commits deployed but absent from $TARGET_LABEL ($TARGET_SHORT..$DEPLOYED_SHORT):"
-release_commit_list "$ROOT" "$SERVICE" "$TARGET_SHA" "$DEPLOYED_SHA" '- `%h` %s (%an <%ae>)'
+echo "## Commits in ${TARGET_LABEL} only"
+echo
+print_commit_list "$DEPLOYED_SHA" "$TARGET_SHA"
+echo
+echo "## Commits deployed only"
+echo
+print_commit_list "$TARGET_SHA" "$DEPLOYED_SHA"
