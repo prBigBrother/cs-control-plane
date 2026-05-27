@@ -199,7 +199,9 @@ Rules:
 - Fetch or reuse Linear task context before `/pr-create` so the generated summary describes both the task and the implementation.
 - Make cross-repo dependencies explicit in each PR.
 - For migration tasks, include Phase 1 or Phase 2 status and flags.
-- Update the generated validation checklist before marking a draft PR ready for review.
+- `/pr-create` runs root `lint` and `typecheck` package scripts before pushing when present.
+- Use `PR_SKIP_VALIDATION=1` only when no applicable local validation path exists, and document the reason in the PR body.
+- Update the generated validation checklist before marking a draft PR ready for review if extra manual checks were needed.
 - Use `/release-prepare`, not `/pr-create`, for ops release tag updates.
 
 ## 8. Code Review
@@ -260,7 +262,7 @@ Session:
 - control plane
 
 Use:
-- `release`
+- no agent for the standard path; use `/release-prepare`
 
 Commands:
 - `/compare <service> <environment> [target-sha]`
@@ -296,7 +298,7 @@ Session:
 
 Use:
 - `/pr-comments ops <pr-number>` for review feedback
-- `release` for release-specific fixes
+- `release` only for non-standard release-specific fixes inside an `ops` worktree
 - `validator` only if validation is needed inside the `ops` worktree
 
 Rules:

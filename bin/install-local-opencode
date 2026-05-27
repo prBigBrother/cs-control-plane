@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
-  echo "Usage: install-local-opencode <repo-or-worktree-path> [engineering|migration|release|external|full] [repo|control-plane|full]" >&2
+  echo "Usage: install-local-opencode <repo-or-worktree-path> [engineering|migration] [repo|control-plane|full]" >&2
   exit 1
 fi
 
@@ -40,12 +40,9 @@ link_relative() {
 case "$PROFILE" in
   engineering) CONFIG="$ROOT/opencode.json" ;;
   migration) CONFIG="$ROOT/opencode.migration.json" ;;
-  release) CONFIG="$ROOT/opencode.release.json" ;;
-  external) CONFIG="$ROOT/opencode.external.json" ;;
-  full) CONFIG="$ROOT/opencode.full.json" ;;
   *)
     echo "Unknown OpenCode profile: $PROFILE" >&2
-    echo "Expected one of: engineering, migration, release, external, full" >&2
+    echo "Expected one of: engineering, migration" >&2
     exit 4
     ;;
 esac

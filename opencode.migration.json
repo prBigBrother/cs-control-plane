@@ -14,6 +14,17 @@
       "enabled": false,
       "oauth": {}
     },
+    "jira": {
+      "type": "remote",
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "enabled": false
+    },
+    "linear": {
+      "type": "remote",
+      "url": "https://mcp.linear.app/mcp",
+      "enabled": true,
+      "oauth": {}
+    },
     "slack": {
       "type": "remote",
       "url": "https://mcp.slack.com/mcp",
@@ -34,6 +45,17 @@
       "headers": {
         "Authorization": "Bearer {env:STORYBLOK_MCP_TOKEN}"
       }
+    },
+    "datadog": {
+      "type": "remote",
+      "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,apm",
+      "enabled": true,
+      "oauth": {}
+    },
+    "clauge-workspace": {
+      "type": "remote",
+      "url": "http://localhost:7421/mcp",
+      "enabled": false
     }
   },
   "instructions": [
@@ -41,6 +63,10 @@
     "instructions/engineering.md",
     "instructions/migration.md"
   ],
+  "tools": {
+    "linear_*": false,
+    "datadog_*": false
+  },
   "watcher": {
     "ignore": [
       "**/node_modules/**",

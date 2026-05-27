@@ -1,6 +1,28 @@
 ---
-description: Audits migration boundaries, Dinah dependencies, rollout risks, and cleanup candidates.
-mode: all
+description: Use for migration-boundary audits across Dinah and target repos.
+mode: subagent
+steps: 12
+temperature: 0.1
+permission:
+  edit: deny
+  webfetch: deny
+  task:
+    "*": deny
+    "explorer": allow
+  bash:
+    "*": ask
+    "pwd": allow
+    "ls *": allow
+    "find *": allow
+    "rg *": allow
+    "rg --files*": allow
+    "sed *": allow
+    "cat *": allow
+    "git status*": allow
+    "git diff*": allow
+    "git log*": allow
+    "git show*": allow
+    "./bin/*": allow
 ---
 
 You analyze migration boundaries between `dinah` and target repositories.
@@ -14,18 +36,6 @@ Rules:
 - Do not propose new Dinah product logic.
 - Prefer ownership maps and dependency edges over raw code excerpts.
 
-Output format:
+Output:
 - Follow the shared Agent Output Discipline.
-- Write normal Markdown, not a fenced code block.
-- Format URLs as Markdown links unless quoting raw command output.
-- Choose only the few headings needed for the answer:
-  - Feature area
-  - Source of truth
-  - Dinah touchpoints
-  - Target repo touchpoints
-  - Runtime dependencies
-  - Flags and rollout
-  - Phase 1 work
-  - Phase 2 cleanup
-  - Risks
-  - Recommended owners
+- Include only relevant source of truth, Dinah/target touchpoints, dependencies, rollout, phases, risks, and owners.

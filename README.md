@@ -89,28 +89,24 @@ Attach shared OpenCode config to a base repo or worktree:
 ./bin/install-local-opencode repos/icarus
 ./bin/install-local-opencode worktrees/icarus/ENG-123-checkout-redesign
 ./bin/install-local-opencode worktrees/daedalus/ENG-456-migration-cutover migration
-./bin/install-local-opencode worktrees/ops/ENG-789-release release
-./bin/install-local-opencode repos/icarus full
 ```
 
-The default profile is `engineering`, which keeps remote MCPs disabled and loads only shared engineering instructions. Optional profiles are:
+The default profile is `engineering`, which loads shared engineering instructions. The only optional profile is:
 - `migration`: engineering plus migration rules
-- `release`: engineering plus release rules
-- `external`: engineering plus remote MCP integrations
-- `full`: all shared rules plus remote MCP integrations, matching the previous broad setup
 
-The `external` and `full` profiles include the official Datadog MCP server with `core,apm` toolsets for log and trace investigation. After installing one of those profiles, authenticate once with:
+Linear and Datadog MCP servers are configured for per-agent use. Their tools are hidden globally and exposed through `linear-operator` and `datadog-investigator`. Authenticate once when needed:
 
 ```bash
+opencode mcp auth linear
 opencode mcp auth datadog
 ```
 
 Use the Datadog endpoint for your site if the default US1 endpoint is not correct.
 
 Agent visibility is installed separately:
-- `repo`: Explorer, Implementer, Validator
-- `control-plane`: Manager, Auditor, Release
-- `full`: all project agents
+- `repo`: common agents plus Explorer, Implementer, Validator
+- `control-plane`: common agents plus Manager, Auditor, Release
+- `full`: common agents plus all project agents
 
 Repo and worktree sessions also receive the shared helper scripts at `./.opencode/bin`, so slash commands can run deterministic helpers without locating the control-plane checkout.
 
@@ -196,6 +192,8 @@ Create an app repo PR from a committed worktree branch:
 ```bash
 ./bin/pr-create worktrees/icarus/ENG-123-checkout-redesign
 ```
+
+`bin/pr-create` runs root `lint` and `typecheck` package scripts when present before it pushes the branch. Use `PR_SKIP_VALIDATION=1` only for repos without an applicable local validation path.
 
 Review a GitHub pull request:
 

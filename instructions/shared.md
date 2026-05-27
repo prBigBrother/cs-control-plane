@@ -14,9 +14,6 @@
 - Use scoped OpenCode profiles to keep default context small:
   - `engineering`: shared engineering rules only
   - `migration`: engineering plus migration rules
-  - `release`: engineering plus release rules
-  - `external`: engineering plus remote MCP integrations
-  - `full`: all shared rules plus remote MCP integrations
 
 ## Agent Output Discipline
 
@@ -32,7 +29,7 @@
 
 ## Datadog Investigation
 
-- When an `external` or `full` profile session is investigating production or staging behavior, use Datadog before guessing from code alone.
+- Use `datadog-investigator` for production or staging errors, latency, failed jobs, webhooks, queues, deploy regressions, traces, logs, and concrete runtime identifiers.
 - Use Datadog for errors, incidents, traces, latency, failed jobs, webhooks, queues, deploy regressions, and prompts that include identifiers such as `trace_id`, `request_id`, `user_id`, `shipment_id`, `order_id`, or `payment_id`.
 - Start with the narrowest useful time window, usually 15-60 minutes unless the user provides a time range.
 - Filter by `env` and likely `service` when known, search logs for concrete identifiers or error messages, then inspect related traces or spans.

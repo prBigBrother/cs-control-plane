@@ -30,3 +30,7 @@ done < <(find "$ROOT/.opencode/commands" -maxdepth 1 -type f -name '*.md' | sort
 if [ "$missing" -ne 0 ]; then
   exit 1
 fi
+
+echo
+echo "Agent audit:"
+"$ROOT/bin/agent-audit"

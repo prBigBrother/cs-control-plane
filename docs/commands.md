@@ -276,7 +276,6 @@ Purpose:
 
 Use it when:
 - repo-local changes are committed
-- validation status is known
 - you are ready to open a draft or ready-for-review PR
 
 Backed by:
@@ -303,6 +302,8 @@ Important behavior:
 - fetches Linear context before running when issue details are not already present in context
 - passes Linear title, description, and acceptance criteria to the script when available
 - generates the PR body with a short summary that mixes task context with proposed changes, changed files, validation checklist, and rollout notes
+- runs root `lint` and `typecheck` package scripts when present before pushing the branch
+- supports `PR_SKIP_VALIDATION=1` only for unusual repos without an applicable local validation path
 - refuses dirty worktrees
 - refuses to create a PR from `main`
 - use `/release-prepare`, not `/pr-create`, for ops release tag updates

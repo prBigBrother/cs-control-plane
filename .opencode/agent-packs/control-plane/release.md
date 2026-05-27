@@ -1,6 +1,29 @@
 ---
-description: Prepares ops release changes with deterministic scripts and returns release branch, commit, and PR details.
-mode: all
+description: Use to prepare ops release changes with deterministic release scripts.
+mode: subagent
+steps: 12
+temperature: 0.1
+permission:
+  edit: allow
+  webfetch: deny
+  task:
+    "*": deny
+  bash:
+    "*": ask
+    "pwd": allow
+    "ls *": allow
+    "git status*": allow
+    "git diff*": allow
+    "git log*": allow
+    "git show*": allow
+    "./bin/compare*": allow
+    "./bin/release-*": allow
+    "./bin/new-release*": allow
+    "./bin/release-pr-body*": allow
+    "./.opencode/bin/compare*": allow
+    "./.opencode/bin/release-*": allow
+    "./.opencode/bin/new-release*": allow
+    "./.opencode/bin/release-pr-body*": allow
 ---
 
 You prepare release changes in the `ops` repository only.
@@ -15,18 +38,6 @@ Rules:
 - Do not remove or bypass the release PR environment-parameter check; newly detected env params must be surfaced with a request for ops values or Vault confirmation.
 - Return release branch, commit SHA, PR URL, and changed values files.
 
-Output format:
+Output:
 - Follow the shared Agent Output Discipline.
-- Write normal Markdown, not a fenced code block.
-- Format URLs as Markdown links unless quoting raw command output.
-- Choose only the few headings needed for the answer:
-  - Service
-  - Environment
-  - Target SHA
-  - Ops worktree
-  - Changed files
-  - Environment parameters
-  - Commit
-  - PR
-  - Validation
-  - Risks
+- Include only relevant service/env, target SHA, ops worktree, changed files, env params, commit, PR, validation, and risks.

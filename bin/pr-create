@@ -31,6 +31,7 @@ source "$ROOT/lib/task-common.sh"
 MODE="draft"
 TARGET_PATH=""
 TASK_ID=""
+VALIDATION_LINES=()
 
 case "$#" in
   0)
@@ -180,6 +181,81 @@ if [ -z "$TASK_ID" ]; then
   exit 11
 fi
 
+package_runner() {
+  local path="$1"
+
+  if [ -f "$path/pnpm-lock.yaml" ] && command -v pnpm >/dev/null 2>&1; then
+    echo "pnpm"
+  elif [ -f "$path/yarn.lock" ] && command -v yarn >/dev/null 2>&1; then
+    echo "yarn"
+  elif [ -f "$path/bun.lockb" ] && command -v bun >/dev/null 2>&1; then
+    echo "bun"
+  else
+    echo "npm"
+  fi
+}
+
+run_package_script() {
+  local runner="$1"
+  local script_name="$2"
+
+  case "$runner" in
+    pnpm) pnpm run "$script_name" ;;
+    yarn) yarn run "$script_name" ;;
+    bun) bun run "$script_name" ;;
+    npm) npm run "$script_name" ;;
+    *)
+      echo "Error: unsupported package runner: $runner" >&2
+      exit 13
+      ;;
+  esac
+}
+
+run_pr_validation() {
+  local runner
+  local scripts
+  local script_name
+
+  if [ "${PR_SKIP_VALIDATION:-}" = "1" ]; then
+    VALIDATION_LINES+=("- [ ] Skipped via PR_SKIP_VALIDATION=1")
+    echo "Warning: skipping validation because PR_SKIP_VALIDATION=1 is set." >&2
+    return 0
+  fi
+
+  if [ ! -f "$TARGET_PATH/package.json" ]; then
+    VALIDATION_LINES+=("- [ ] No root package.json found; run repo-specific validation manually")
+    echo "Warning: no root package.json found; skipping automatic validation." >&2
+    return 0
+  fi
+
+  runner="$(package_runner "$TARGET_PATH")"
+  scripts="$(
+    node -e '
+const fs = require("node:fs")
+const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+const scripts = pkg.scripts || {}
+for (const name of ["lint", "typecheck"]) {
+  if (Object.prototype.hasOwnProperty.call(scripts, name)) console.log(name)
+}
+' "$TARGET_PATH/package.json"
+  )"
+
+  if [ -z "$scripts" ]; then
+    VALIDATION_LINES+=("- [ ] No root lint/typecheck scripts found; run repo-specific validation manually")
+    echo "Warning: no root lint/typecheck scripts found; skipping automatic validation." >&2
+    return 0
+  fi
+
+  while IFS= read -r script_name; do
+    [ -n "$script_name" ] || continue
+    echo "Running validation: $runner run $script_name" >&2
+    (cd "$TARGET_PATH" && run_package_script "$runner" "$script_name")
+    VALIDATION_LINES+=("- [x] \`$runner run $script_name\`")
+  done <<<"$scripts"
+}
+
+run_pr_validation
+
 LATEST_SUBJECT="$(git -C "$TARGET_PATH" log -1 --pretty=%s)"
 TITLE_DETAIL="$(printf '%s\n' "$LATEST_SUBJECT" | sed -E "s/^$TASK_ID[ :_-]+//")"
 
@@ -261,7 +337,11 @@ fi
 
   echo
   echo "## Validation"
-  echo "- [ ] Add validation performed before marking ready for review"
+  if [ "${#VALIDATION_LINES[@]}" -eq 0 ]; then
+    echo "- [ ] Add validation performed before marking ready for review"
+  else
+    printf '%s\n' "${VALIDATION_LINES[@]}"
+  fi
 
   echo
   echo "## Rollout Notes"

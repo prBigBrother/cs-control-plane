@@ -19,18 +19,21 @@ OpenCode uses the lowercase file name as the agent id. In the UI, treat these as
 - `validator` = Validator
 - `auditor` = Auditor
 - `release` = Release
+- `linear-operator` = Linear Operator
+- `datadog-investigator` = Datadog Investigator
 
-Each agent is configured with `mode: all`, so it can be selected as a primary agent with Tab and can also be invoked as a subagent.
+The Manager is the primary coordinator. Other shared agents are subagents with scoped permissions and step limits.
 
 Agent files live in packs:
 - `.opencode/agent-packs/control-plane/` contains Manager, Auditor, and Release.
 - `.opencode/agent-packs/repo/` contains Explorer, Implementer, and Validator.
+- `.opencode/agent-packs/common/` contains shared Linear and Datadog specialists.
 - `.opencode/agents/` is the active control-plane set.
 
 `bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
-- `repo` shows Explorer, Implementer, and Validator.
-- `control-plane` shows Manager, Auditor, and Release.
-- `full` shows all project agents.
+- `repo` shows common agents plus Explorer, Implementer, and Validator.
+- `control-plane` shows common agents plus Manager, Auditor, and Release.
+- `full` shows common agents plus all project agents.
 
 ### Manager
 
@@ -72,6 +75,7 @@ Use it when:
 Do not use it for:
 - making changes
 - cross-repo planning
+- direct Linear or Datadog tool use; delegate those to the specialists
 
 Typical output:
 - Linear context used
@@ -82,6 +86,30 @@ Typical output:
 
 Agent id:
 - `explorer`
+
+### Linear Operator
+
+Purpose:
+- look up, create, comment on, assign, or update Linear issues
+
+Use it when:
+- ENG task context is missing
+- ticket metadata or comments are needed
+- a Linear write is explicitly requested
+
+Agent id:
+- `linear-operator`
+
+### Datadog Investigator
+
+Purpose:
+- investigate production or staging behavior using Datadog logs, traces, spans, metrics, incidents, or RUM
+
+Use it when:
+- a prompt mentions logs, traces, incidents, runtime behavior, failed jobs, request IDs, shipment/order/user IDs, or deploy regressions
+
+Agent id:
+- `datadog-investigator`
 
 ### Implementer
 
@@ -203,8 +231,7 @@ Agent id:
 
 1. Use `./bin/compare` to inspect deployed vs target SHA.
 2. Use `/release-prepare` to create the `ops` release worktree, commit the release, push the branch, and open the PR.
-3. Use `release` behavior in that `ops` session only.
-4. Review the created PR.
+3. Review the created PR.
 
 ## Commands That Fit The Agents
 

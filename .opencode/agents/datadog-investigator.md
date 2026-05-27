@@ -1,0 +1,1 @@
+../agent-packs/common/datadog-investigator.md
