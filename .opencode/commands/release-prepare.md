@@ -1,16 +1,14 @@
-Prepare a release in the `ops` repo based on app repo heads.
+---
+description: Prepare an ops release PR from an app repo head.
+---
 
-Delegation:
-- Delegate to the `release` agent only after confirming the request needs release preparation rather than a simple compare.
-- Pass the full slash-command invocation unchanged.
-- The Release agent must keep the flow script-driven and return the release branch, commit, and PR URL.
+Usage: `/release-prepare <service> [environment]`
 
-Usage:
-`/release-prepare <service> [environment]`
+Run `./bin/release-prepare <service> [environment]`.
 
 Rules:
+- Use the Release agent when available; otherwise keep the flow script-driven.
 - Operate through the `ops` worktree only.
-- Run `./bin/release-prepare <service> [environment]`.
-- Fail if `repos/ops` is dirty before the release worktree is created.
-- Ensure the release PR body includes the generated environment-parameter check, including any question asking for missing values or Vault confirmation.
-- Return the script's Markdown summary directly.
+- Fail if `repos/ops` is dirty before creating the release worktree.
+- Preserve the generated environment-parameter check in the PR body.
+- Return the script Markdown summary directly.

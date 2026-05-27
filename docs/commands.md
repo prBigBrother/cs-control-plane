@@ -189,13 +189,13 @@ Usage:
 - `/compare-curl --input-file tmp/compare-curl-input.txt`
 - `/compare-curl --format text '<curl ...>' '<curl ...>'`
 - `/compare-curl --context 5 --left-label old --right-label new '<curl ...>' '<curl ...>'`
-- `/compare-curl --no-line-diff '<curl ...>' '<curl ...>'`
+- `/compare-curl --line-diff '<curl ...>' '<curl ...>'`
 
 Typical output:
 - Markdown objective that tells the agent to make local match staging
 - response snapshot table with status, content type, response size, and timing for each curl
 - JSON path-level agent fix context that explains what local is missing or changing
-- fenced line-numbered normalized response diff as evidence
+- optional fenced line-numbered normalized response diff when `--line-diff` is passed
 - skipped-diff diagnostics instead of a body diff when either side fails or returns HTTP 4xx/5xx
 
 ### `/pr-comments`
@@ -484,6 +484,7 @@ Typical output:
 
 Script-backed commands:
 - `/compare` → `./bin/compare`
+- `/compare-curl` → `./bin/compare-curl`
 - `/pr-create` → `./bin/pr-create`
 - `/pr-comments` → `./bin/pr-comments`
 - `/pr-review` → `./bin/pr-review`

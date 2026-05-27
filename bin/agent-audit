@@ -13,6 +13,7 @@ Audits OpenCode agent and profile token-efficiency guardrails.
 
 Checks:
 - agent files have description, scoped mode, permission, and steps
+- command files have description frontmatter
 - repeated output-format boilerplate has not returned
 - OpenCode JSON profiles parse
 - Linear and Datadog MCPs are enabled but hidden globally
@@ -95,6 +96,26 @@ for file in "${agent_files[@]}"; do
   fi
 done
 ok "agent pack word count: $agent_words"
+
+command_files=()
+while IFS= read -r file; do
+  command_files+=("$file")
+done < <(find "$ROOT/.opencode/commands" -maxdepth 1 -type f -name '*.md' | sort)
+
+if [ "${#command_files[@]}" -eq 0 ]; then
+  fail "no command files found under .opencode/commands"
+else
+  ok "found ${#command_files[@]} command files"
+fi
+
+for file in "${command_files[@]}"; do
+  rel="${file#"$ROOT"/}"
+  frontmatter_has "$file" '^description:' || fail "$rel missing description frontmatter"
+
+  if [ "$VERBOSE" -eq 1 ]; then
+    printf 'command %-70s %4s words\n' "$rel" "$(wc -w < "$file" | tr -d ' ')"
+  fi
+done
 
 json_files=("$ROOT/opencode.json" "$ROOT/opencode.migration.json")
 

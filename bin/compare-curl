@@ -41,13 +41,14 @@ def usage_error(message: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="compare-curl",
-        description="Run two curl commands, normalize JSON responses, and report line-numbered differences.",
+        description="Run two curl commands, normalize JSON responses, and report compact differences.",
     )
     parser.add_argument("--context", type=int, default=3, help="context lines around each diff hunk (default: 3)")
     parser.add_argument("--left-label", default="local", help="label for the first curl command")
     parser.add_argument("--right-label", default="staging", help="label for the second curl command")
-    parser.add_argument("--max-findings", type=int, default=80, help="maximum JSON analytics findings to print (default: 80)")
-    parser.add_argument("--no-line-diff", action="store_true", help="skip the supporting line-numbered response diff")
+    parser.add_argument("--max-findings", type=int, default=20, help="maximum JSON analytics findings to print (default: 20)")
+    parser.add_argument("--line-diff", action="store_true", help="include the supporting line-numbered response diff")
+    parser.add_argument("--no-line-diff", action="store_true", help="deprecated; line diff is omitted by default")
     parser.add_argument("--format", choices=("markdown", "text"), default="markdown", help="output format (default: markdown)")
     parser.add_argument("--stdin", action="store_true", help="read a raw blob containing exactly two curl commands from stdin")
     parser.add_argument("--input-file", help="read a raw blob containing exactly two curl commands from a file")
@@ -558,7 +559,7 @@ def print_markdown_report(left: CurlResult, right: CurlResult, args: argparse.Na
             print(f"- {line}")
         print("")
 
-    if not args.no_line_diff:
+    if args.line_diff and not args.no_line_diff:
         print("## Evidence Diff")
         print("")
         print("Normalized response bodies are shown with line numbers. `-` is local, `+` is staging.")
@@ -603,7 +604,7 @@ def main() -> int:
     print("Changed normalized response lines:")
     for line in changed_ranges(left_lines, right_lines):
         print(line)
-    if not args.no_line_diff:
+    if args.line_diff and not args.no_line_diff:
         print("")
         print("Line-numbered normalized response diff:")
         print("```diff")

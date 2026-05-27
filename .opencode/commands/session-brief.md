@@ -1,14 +1,11 @@
-Return a compact repo/worktree brief for agent handoff.
+---
+description: Return compact repo/worktree context for agent handoff.
+---
 
-Fast path:
-- Do not delegate this command to an agent.
-- Run the script directly and return the output.
-- Use this before spawning repo-scoped agents so repeated discovery starts from the same compact state.
+Usage: `/session-brief [repo-or-worktree-path]`
 
-Usage:
-`/session-brief [repo-or-worktree-path]`
+Run the script path for the current session:
+- repo worktree: `./.opencode/bin/session-brief [repo-or-worktree-path]`
+- control plane: `./bin/session-brief [repo-or-worktree-path]`
 
-Rules:
-- From a repo worktree, run `./.opencode/bin/session-brief [repo-or-worktree-path]`.
-- From the control plane, run `./bin/session-brief [repo-or-worktree-path]`.
-- Return path, branch, git status, package scripts, and local instruction presence.
+Return path, branch, git status, package scripts, validation commands, runtime links, env files, open PR, and local AGENTS presence.

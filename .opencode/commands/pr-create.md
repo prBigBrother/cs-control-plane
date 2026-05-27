@@ -1,40 +1,22 @@
-Create a GitHub pull request for a repo worktree branch.
-
-Fast path:
-- Do not delegate this command to an agent.
-- If an `ENG-<id>` is known and Linear issue details are not already in context, fetch the Linear issue before running the script.
-- Pass the Linear title, short description, and acceptance criteria to the script through `PR_TASK_TITLE`, `PR_TASK_DESCRIPTION`, and `PR_TASK_ACCEPTANCE` environment variables when available.
-- Run the script directly after the repo worktree has committed changes and passed validation.
-- The script runs root `lint` and `typecheck` package scripts before pushing when they exist.
-- Default to a draft PR unless `ready` is explicitly requested.
-- Generate the PR title and description from the task id, Linear task context, commits, and changed files.
-- The PR title must start with `ENG-<id>:`. If no task id can be inferred, fail instead of creating a PR.
+---
+description: Create a GitHub pull request for a repo worktree branch.
+---
 
 Usage:
-`/pr-create [worktree-path] [draft|ready]`
-`/pr-create [repo eng-id] [draft|ready]`
-`/pr-create [repo eng-id slug] [draft|ready]`
+- `/pr-create [worktree-path] [draft|ready]`
+- `/pr-create [repo eng-id] [draft|ready]`
+- `/pr-create [repo eng-id slug] [draft|ready]`
 
-Session:
-- repo worktree with no repo args
-- any session with an explicit worktree path
-- control plane with explicit `repo eng-id`, when exactly one matching worktree exists
-- control plane with explicit `repo eng-id slug`
+Run the script directly:
+- repo worktree: `./.opencode/bin/pr-create [draft|ready]`
+- control plane: `./bin/pr-create [args...]`
+
+Before running:
+- If an `ENG-<id>` is known and Linear context is absent, fetch it.
+- Pass available Linear context as `PR_TASK_TITLE`, `PR_TASK_DESCRIPTION`, and `PR_TASK_ACCEPTANCE`.
 
 Rules:
-- From a repo worktree, run `./.opencode/bin/pr-create [draft|ready]`.
-- From the control plane, run `./bin/pr-create [worktree-path] [draft|ready]`, `./bin/pr-create [repo eng-id] [draft|ready]`, or `./bin/pr-create [repo eng-id slug] [draft|ready]`.
-- Refuse to create a PR from `main`.
-- Refuse dirty worktrees so uncommitted work is not left behind.
-- Generate the PR title as `ENG-<id>: <latest commit subject or task slug>`.
-- Generate the PR body with a non-empty summary that combines task context and proposed changes, changed files, validation checklist, and rollout notes.
-- Automatic validation must pass before the script pushes. Use `PR_SKIP_VALIDATION=1` only when the repo has no applicable local validation path and call that out in the PR body.
-- If an open PR already exists for the current branch, return that PR URL.
+- Default to draft unless `ready` is explicit.
+- Let the script enforce branch, dirty-state, validation, push, title/body, and existing-PR checks.
 - Use `/release-prepare`, not `/pr-create`, for ops release tag updates.
-
-Typical output:
-- branch
-- GitHub repository
-- mode
-- title
-- PR URL
+- Return branch, repository, mode, title, PR URL, and validation result only.
