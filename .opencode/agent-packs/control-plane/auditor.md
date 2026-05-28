@@ -22,7 +22,7 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
-    "./bin/*": allow
+    "./.opencode/bin/*": allow
 ---
 
 You analyze migration boundaries between `dinah` and target repositories.

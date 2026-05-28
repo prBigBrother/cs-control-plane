@@ -4,9 +4,7 @@ description: Build the filtered first Graphify knowledge graph.
 
 Usage: `/knowledge-bootstrap [--dry-run|--extract|--merge-existing] [--smoke] [--skip-control-docs]`
 
-Run the script path for the current session:
-- repo worktree: `./.opencode/bin/knowledge-bootstrap [args]`
-- control plane: `./bin/knowledge-bootstrap [args]`
+Run `./.opencode/bin/knowledge-bootstrap [args]`.
 
 Rules:
 - Default to dry-run unless the user explicitly asks to extract.
@@ -16,4 +14,5 @@ Rules:
 - Do not run raw `graphify extract .` from the control-plane root.
 - Keep `odin` excluded and product repo non-code files filtered out for v1.
 - For the default OpenAI backend, Graphify must be installed with `uv tool install graphifyy --with openai --force`.
+- Raw graph merges normalize temporary bootstrap corpus IDs before writing `graphify-out/merged-graph.json`.
 - Return included repos, code counts, control-doc estimate, output path, and any Graphify failure.

@@ -4,7 +4,7 @@ description: Create or repair one or more Engineering task worktrees.
 
 Usage: `/task-start <repo...> <eng-id> [slug] [type]`
 
-Run `./bin/new-task <repo> <eng-id> [slug] [type]` once per editable repo.
+Run `./.opencode/bin/new-task <repo> <eng-id> [slug] [type]` once per editable repo.
 
 Rules:
 - Do not delegate.

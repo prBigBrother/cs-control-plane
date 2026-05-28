@@ -16,10 +16,6 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
-    "./bin/compare*": allow
-    "./bin/release-*": allow
-    "./bin/new-release*": allow
-    "./bin/release-pr-body*": allow
     "./.opencode/bin/compare*": allow
     "./.opencode/bin/release-*": allow
     "./.opencode/bin/new-release*": allow
@@ -32,7 +28,7 @@ Rules:
 - Work only in an `ops` worktree.
 - Use full commit SHAs.
 - Keep release output deterministic and script-driven.
-- Prefer `./bin/compare`, `./bin/release-prepare`, `./bin/new-release`, and `./bin/release-pr-body` over ad hoc git commands.
+- Prefer `./.opencode/bin/compare`, `./.opencode/bin/release-prepare`, `./.opencode/bin/new-release`, and `./.opencode/bin/release-pr-body` over ad hoc git commands.
 - Do not edit app repositories.
 - Fail early on dirty `repos/ops` state unless the user explicitly asks to inspect it.
 - Do not remove or bypass the release PR environment-parameter check; newly detected env params must be surfaced with a request for ops values or Vault confirmation.

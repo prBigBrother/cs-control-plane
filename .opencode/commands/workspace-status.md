@@ -4,7 +4,7 @@ description: Report compact control-plane workspace health.
 
 Usage: `/workspace-status`
 
-Run `./bin/workspace-doctor`.
+Run `./.opencode/bin/workspace-doctor`.
 
 Rules:
 - Do not delegate.

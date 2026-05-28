@@ -7,9 +7,7 @@ Usage:
 - `/pr-create [repo eng-id] [draft|ready]`
 - `/pr-create [repo eng-id slug] [draft|ready]`
 
-Run the script directly:
-- repo worktree: `./.opencode/bin/pr-create [draft|ready]`
-- control plane: `./bin/pr-create [args...]`
+Run `./.opencode/bin/pr-create [args...]`.
 
 Before running:
 - If an `ENG-<id>` is known and Linear context is absent, fetch it.

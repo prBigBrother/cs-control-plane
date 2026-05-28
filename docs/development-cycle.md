@@ -9,7 +9,7 @@ This guide describes the standard engineering cycle from task intake through rel
 - Use one editing owner per repo worktree.
 - Use subagents when work can run independently by repo or phase.
 - Use script-backed commands directly when the task is deterministic.
-- Control-plane sessions show Manager, Auditor, and Release.
+- Control-plane sessions show the full shared agent set so Manager can delegate repo-scoped discovery, implementation, and validation.
 - Repo worktree sessions show Explorer, Implementer, and Validator.
 
 ## 1. Intake And Scope

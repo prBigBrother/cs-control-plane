@@ -6,10 +6,10 @@ Usage:
 - `/compare-curl '<curl ...>' '<curl ...>'`
 - `/compare-curl <raw pasted local curl> <raw pasted staging curl>`
 
-Run `./bin/compare-curl [options] '<curl ...>' '<curl ...>'`.
+Run `./.opencode/bin/compare-curl [options] '<curl ...>' '<curl ...>'`.
 
 Rules:
-- If the user pastes raw curls, save them to `tmp/compare-curl-input.txt` and run `./bin/compare-curl --input-file tmp/compare-curl-input.txt`.
+- If the user pastes raw curls, save them to `tmp/compare-curl-input.txt` and run `./.opencode/bin/compare-curl --input-file tmp/compare-curl-input.txt`.
 - Treat the first curl as `local` and the second as `staging` unless labels are provided.
 - Return the script Markdown directly.
 - Default output is compact; use `--line-diff` only when evidence lines are needed.

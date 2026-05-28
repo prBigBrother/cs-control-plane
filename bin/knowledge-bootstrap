@@ -501,9 +501,34 @@ const merged = {
 const seenNodes = new Set()
 const seenEdges = new Set()
 const seenHyperedges = new Set()
+const normalizedIds = new Set()
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function normalizeLocalId(repo, id) {
+  if (typeof id !== "string") return id
+
+  const repoPattern = escapeRegex(repo)
+  const patterns = [
+    new RegExp(`.*control[_-]plane[_-]graphify[_-]bootstrap[_-]corpus[_-]${repoPattern}[_-]`),
+    new RegExp(`.*control-plane-graphify-bootstrap/corpus/${repoPattern}/`),
+  ]
+
+  for (const pattern of patterns) {
+    const next = id.replace(pattern, "")
+    if (next && next !== id) {
+      normalizedIds.add(`${repo}::${id}`)
+      return next
+    }
+  }
+
+  return id
+}
 
 function prefixed(repo, id) {
-  return `${repo}::${id}`
+  return `${repo}::${normalizeLocalId(repo, id)}`
 }
 
 for (const spec of specs) {
@@ -520,15 +545,20 @@ for (const spec of specs) {
 
   for (const node of graph.nodes || []) {
     if (!node.id) continue
-    const id = prefixed(repo, node.id)
+    const normalizedLocalId = normalizeLocalId(repo, node.id)
+    const id = `${repo}::${normalizedLocalId}`
     if (seenNodes.has(id)) continue
     seenNodes.add(id)
-    merged.nodes.push({
+    const next = {
       ...node,
       id,
       repo,
       local_id: node.local_id || node.id,
-    })
+    }
+    if (normalizedLocalId !== node.id) {
+      next.normalized_local_id = normalizedLocalId
+    }
+    merged.nodes.push(next)
   }
 
   for (const edge of graph.edges || []) {
@@ -566,6 +596,9 @@ for (const spec of specs) {
 fs.mkdirSync(path.dirname(outPath), { recursive: true })
 fs.writeFileSync(outPath, `${JSON.stringify(merged, null, 2)}\n`)
 console.log(`Merged ${specs.length} raw graphs -> ${merged.nodes.length} nodes, ${merged.edges.length} edges`)
+if (normalizedIds.size > 0) {
+  console.log(`Normalized ${normalizedIds.size} staged-corpus graph IDs`)
+}
 console.log(`Written to: ${outPath}`)
 NODE
 }

@@ -43,6 +43,7 @@ These are safe in either place when the target repo/path is explicit or the help
 - `/pr-comments <repo> <pr-number>`
 - `/pr-review <pr-url>`
 - `/knowledge-bootstrap [--dry-run|--extract] [--smoke]`
+- `/knowledge <question>`
 - `/session-brief [repo-or-worktree-path]`
 - `/pr-create [worktree-path] [draft|ready]`
 - `/pr-create [repo eng-id] [draft|ready]`
@@ -68,7 +69,7 @@ Use it when:
 - you want repo-local `AGENTS.md` copied into the worktree when present
 
 Backed by:
-- `./bin/new-task`
+- `./.opencode/bin/new-task`
 
 Usage:
 - `/task-start <repo...> <eng-id> [slug] [type]`
@@ -84,7 +85,7 @@ Important behavior:
 - new worktrees are created from `origin/main` without checking out or pulling the base repo under `repos/*`
 - worktrees receive the repo agent set: Explorer, Implementer, and Validator
 - Daedalus worktrees run `npm run db:generate` after setup when Prisma is available
-- if the base checkout has no `node_modules`, run `./bin/bootstrap` before creating or repairing worktrees
+- if the base checkout has no `node_modules`, run `./.opencode/bin/bootstrap` before creating or repairing worktrees
 
 ### `/task-map`
 
@@ -100,7 +101,7 @@ Use it when:
 - you are coordinating work across sessions and need a stable target path
 
 Backed by:
-- `./bin/worktree-map`
+- `./.opencode/bin/worktree-map`
 
 Usage:
 - `/task-map <repo> <eng-id> [slug]`
@@ -127,7 +128,7 @@ Use it when:
 - you want the standard cleanup path instead of ad hoc git commands
 
 Backed by:
-- `./bin/cleanup-task`
+- `./.opencode/bin/cleanup-task`
 
 Usage:
 - `/task-close <repo> <eng-id> [slug]`
@@ -156,7 +157,7 @@ Use it when:
 - you want to compare against `origin/main` or an explicit SHA
 
 Backed by:
-- `./bin/compare`
+- `./.opencode/bin/compare`
 
 Usage:
 - `/compare <service> <environment> [target-sha]`
@@ -183,7 +184,7 @@ Use it when:
 - you need to hand an agent concrete local-vs-staging response differences before fixing missing behavior
 
 Backed by:
-- `./bin/compare-curl`
+- `./.opencode/bin/compare-curl`
 
 Usage:
 - `/compare-curl '<curl ...>' '<curl ...>'`
@@ -213,8 +214,7 @@ Use it when:
 - you want the full discussion context before making follow-up changes
 
 Backed by:
-- `./bin/pr-comments`
-- repo sessions receive this helper as `./.opencode/bin/pr-comments`
+- `./.opencode/bin/pr-comments`
 
 Usage:
 - `/pr-comments <repo> <pr-number>`
@@ -241,8 +241,7 @@ Use it when:
 - you need consistent severity and approval/change-request behavior
 
 Backed by:
-- `./bin/pr-review`
-- repo sessions receive this helper as `./.opencode/bin/pr-review`
+- `./.opencode/bin/pr-review`
 
 Usage:
 - `/pr-review <pr-url>`
@@ -281,8 +280,7 @@ Use it when:
 - you are ready to open a draft or ready-for-review PR
 
 Backed by:
-- `./bin/pr-create`
-- repo sessions receive this helper as `./.opencode/bin/pr-create`
+- `./.opencode/bin/pr-create`
 
 Usage:
 - `/pr-create [worktree-path] [draft|ready]`
@@ -326,8 +324,7 @@ Use it when:
 - you need path, branch, dirty state, package scripts, and local instruction presence
 
 Backed by:
-- `./bin/session-brief`
-- repo sessions receive this helper as `./.opencode/bin/session-brief`
+- `./.opencode/bin/session-brief`
 
 Usage:
 - `/session-brief [repo-or-worktree-path]`
@@ -359,7 +356,7 @@ Use it when:
 - before committing control-plane changes
 
 Backed by:
-- `./bin/workspace-doctor`
+- `./.opencode/bin/workspace-doctor`
 
 Usage:
 - `/workspace-status`
@@ -388,8 +385,7 @@ Use it when:
 - the merged local graph needs to be regenerated from the approved v1 sources
 
 Backed by:
-- `./bin/knowledge-bootstrap`
-- repo sessions receive this helper as `./.opencode/bin/knowledge-bootstrap`
+- `./.opencode/bin/knowledge-bootstrap`
 
 Usage:
 - `/knowledge-bootstrap`
@@ -410,9 +406,43 @@ Important behavior:
 - use `--merge-existing --no-cluster --skip-control-docs` to repair a raw merge after extraction already finished
 - never runs raw `graphify extract .` from the control-plane root
 - writes generated output under a local temp staging directory and ignored `graphify-out/`
+- raw graph merges normalize temporary bootstrap corpus IDs before writing `graphify-out/merged-graph.json`
 - the default OpenAI backend requires Graphify's tool environment to include `openai`; install with `uv tool install graphifyy --with openai --force`
 - `--skip-control-docs` validates product code extraction without semantic docs or API calls
 - use `--smoke --extract` before the full extraction
+
+### `/knowledge`
+
+Session:
+- either session when the shared helper is installed
+
+Purpose:
+- ask a graph-first codebase question without spelling out the Graphify command
+- make architecture, flow, dependency, impact, and "how A connects to B" questions cheaper to explore
+
+Use it when:
+- you want a quick map before targeted source reads
+- you want to force graph-first behavior for a specific question
+- a natural question is broad enough that raw repo search would be noisy
+
+Backed by:
+- `./.opencode/bin/knowledge-query`
+
+Usage:
+- `/knowledge how does shipper email signup work?`
+- `/knowledge how is createEmailShipper connected to signup tracking?`
+- `/knowledge what is affected by driver registration?`
+
+Typical output:
+- graph path used
+- Graphify traversal output
+- follow-up explanation from the agent with verified file paths when needed
+
+Important behavior:
+- queries `graphify-out/merged-graph.json` by default
+- accepts `GRAPHIFY_GRAPH=/path/to/graph.json` for an override
+- does not run extraction, update, bootstrap, hooks, or semantic API work
+- Graphify output is a navigation index; important claims still need targeted source verification
 
 ### `/cross-impl`
 
@@ -481,7 +511,7 @@ Important behavior:
 - the flow fails early if `repos/ops` is dirty
 
 Backed by:
-- `./bin/release-prepare`
+- `./.opencode/bin/release-prepare`
 
 Usage:
 - `/release-prepare <service> [environment]`
@@ -528,35 +558,29 @@ Typical output:
 ## Command Wiring Status
 
 Script-backed commands:
-- `/compare` → `./bin/compare`
-- `/compare-curl` → `./bin/compare-curl`
-- `/knowledge-bootstrap` → `./bin/knowledge-bootstrap`
-- `/pr-create` → `./bin/pr-create`
-- `/pr-comments` → `./bin/pr-comments`
-- `/pr-review` → `./bin/pr-review`
-- `/release-prepare` → `./bin/release-prepare`
-- `/session-brief` → `./bin/session-brief`
-- `/task-close` → `./bin/cleanup-task`
-- `/task-map` → `./bin/worktree-map`
-- `/task-start` → `./bin/new-task`
-- `/workspace-status` → `./bin/workspace-doctor`
-
-Repo-session helper paths:
+- `/compare` → `./.opencode/bin/compare`
+- `/compare-curl` → `./.opencode/bin/compare-curl`
+- `/knowledge-bootstrap` → `./.opencode/bin/knowledge-bootstrap`
+- `/knowledge` → `./.opencode/bin/knowledge-query`
 - `/pr-create` → `./.opencode/bin/pr-create`
 - `/pr-comments` → `./.opencode/bin/pr-comments`
 - `/pr-review` → `./.opencode/bin/pr-review`
+- `/release-prepare` → `./.opencode/bin/release-prepare`
 - `/session-brief` → `./.opencode/bin/session-brief`
-- `/knowledge-bootstrap` → `./.opencode/bin/knowledge-bootstrap`
+- `/task-close` → `./.opencode/bin/cleanup-task`
+- `/task-map` → `./.opencode/bin/worktree-map`
+- `/task-start` → `./.opencode/bin/new-task`
+- `/workspace-status` → `./.opencode/bin/workspace-doctor`
 
 Prompt-only commands:
 - `/cross-impl`
 - `/migration-audit`
 
 Related helpers not currently exposed as slash commands:
-- `./bin/new-release`
-- `./bin/release-pr-body`
-- `./bin/validate-control-plane`
-- `./bin/repo-profile`
+- `./.opencode/bin/new-release`
+- `./.opencode/bin/release-pr-body`
+- `./.opencode/bin/validate-control-plane`
+- `./.opencode/bin/repo-profile`
 
 ## What Not To Do
 

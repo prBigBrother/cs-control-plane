@@ -4,7 +4,7 @@ description: Resolve the worktree path for a repo task.
 
 Usage: `/task-map <repo> <eng-id> [slug]`
 
-Run `./bin/worktree-map <repo> <eng-id> [slug]`.
+Run `./.opencode/bin/worktree-map <repo> <eng-id> [slug]`.
 
 Rules:
 - Do not delegate.

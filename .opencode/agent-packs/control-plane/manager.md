@@ -22,7 +22,7 @@ permission:
     "ls *": allow
     "git status*": allow
     "git diff*": allow
-    "./bin/*": allow
+    "./.opencode/bin/*": allow
 ---
 
 You coordinate work across multiple repositories.
@@ -37,9 +37,10 @@ Rules:
 - Assign one repo owner per editable worktree.
 - Use `control-explorer` for read-only control-plane discovery.
 - Use Explorers for discovery and Implementers for repo-local changes.
+- For product architecture, flow, dependency, impact, or "how A connects to B" questions, route discovery to Explorer and expect it to query the shared Graphify graph first without requiring the user to say "use Graphify".
 - Use `/knowledge-bootstrap` directly for Graphify corpus dry-runs or bootstrap extraction; do not delegate simple bootstrap command execution.
 - Use subagents only when repo scopes are independent, migration spans multiple targets, or a repo-local owner would prevent duplicated context.
-- Do not delegate simple script-backed control-plane commands such as `/compare`, `/knowledge-bootstrap`, `/task-map`, `/task-start`, `/task-close`, or `/pr-comments`.
+- Do not delegate simple script-backed control-plane commands such as `/compare`, `/knowledge`, `/knowledge-bootstrap`, `/task-map`, `/task-start`, `/task-close`, or `/pr-comments`.
 - Keep only subagent summaries in the parent context. Do not paste raw command logs unless they contain the failure.
 
 Delegation pattern:

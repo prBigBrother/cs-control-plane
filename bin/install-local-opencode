@@ -8,7 +8,7 @@ fi
 
 TARGET_INPUT="$1"
 PROFILE="${2:-engineering}"
-AGENT_PROFILE="${3:-repo}"
+AGENT_PROFILE_INPUT="${3:-}"
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -47,15 +47,6 @@ case "$PROFILE" in
     ;;
 esac
 
-case "$AGENT_PROFILE" in
-  repo|control-plane|full) ;;
-  *)
-    echo "Unknown OpenCode agent profile: $AGENT_PROFILE" >&2
-    echo "Expected one of: repo, control-plane, full" >&2
-    exit 5
-    ;;
-esac
-
 case "$TARGET_INPUT" in
   /*) TARGET="$TARGET_INPUT" ;;
   *) TARGET="$ROOT/$TARGET_INPUT" ;;
@@ -67,6 +58,23 @@ if [ ! -d "$TARGET" ]; then
 fi
 
 TARGET="$(cd "$TARGET" && pwd)"
+
+if [ -n "$AGENT_PROFILE_INPUT" ]; then
+  AGENT_PROFILE="$AGENT_PROFILE_INPUT"
+elif [ "$TARGET" = "$ROOT" ]; then
+  AGENT_PROFILE="full"
+else
+  AGENT_PROFILE="repo"
+fi
+
+case "$AGENT_PROFILE" in
+  repo|control-plane|full) ;;
+  *)
+    echo "Unknown OpenCode agent profile: $AGENT_PROFILE" >&2
+    echo "Expected one of: repo, control-plane, full" >&2
+    exit 5
+    ;;
+esac
 
 GIT_DIR="$(git -C "$TARGET" rev-parse --git-dir 2>/dev/null || true)"
 if [ -z "$GIT_DIR" ]; then
@@ -106,12 +114,14 @@ exclude_local_entry() {
   done
 }
 
-if exclude_local_entry "$GIT_DIR"; then
-  if [ "$GIT_COMMON_DIR" != "$GIT_DIR" ]; then
-    exclude_local_entry "$GIT_COMMON_DIR" || true
+if [ "$TARGET" != "$ROOT" ]; then
+  if exclude_local_entry "$GIT_DIR"; then
+    if [ "$GIT_COMMON_DIR" != "$GIT_DIR" ]; then
+      exclude_local_entry "$GIT_COMMON_DIR" || true
+    fi
+  else
+    echo "Warning: could not update $GIT_DIR/info/exclude; continuing with OpenCode install." >&2
   fi
-else
-  echo "Warning: could not update $GIT_DIR/info/exclude; continuing with OpenCode install." >&2
 fi
 
 install_agent_pack() {
@@ -142,8 +152,9 @@ fi
 
 mkdir -p "$TARGET/.opencode/agents"
 
+link_relative "$ROOT/bin" "$TARGET/.opencode/bin"
+
 if [ "$TARGET" != "$ROOT" ]; then
-  link_relative "$ROOT/bin" "$TARGET/.opencode/bin"
   link_relative "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
   link_relative "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
 fi

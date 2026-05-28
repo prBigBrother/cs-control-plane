@@ -4,9 +4,7 @@ description: Run a qualified GitHub pull request review from a PR URL.
 
 Usage: `/pr-review <pr-url>`
 
-Run the script path for the current session:
-- repo worktree: `./.opencode/bin/pr-review collect <pr-url>`
-- control plane: `./bin/pr-review collect <pr-url>`
+Run `./.opencode/bin/pr-review collect <pr-url>`.
 
 Review flow:
 - Read generated `packet.md` and `diff.patch`; inspect code before deciding findings.

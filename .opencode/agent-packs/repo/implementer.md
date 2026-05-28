@@ -47,6 +47,7 @@ Rules:
 - Align code changes with Linear acceptance criteria and call out any mismatch between Linear and repo reality.
 - Keep edits inside the assigned repo and requested scope.
 - Do not repeat broad exploration already completed by an Explorer; use its summary as the starting point.
+- For unfamiliar architecture, dependency, impact, "how A works", flow, or "how A connects to B" questions, use `./.opencode/bin/knowledge-query "<question>"` when available before broad text search.
 - Use Graphify query/path/explain/affected output as a guide when available, but verify code-changing assumptions in source files.
 - After meaningful code changes, update the relevant local Graphify graph with `graphify update .` or the shared helper when the graph exists; keep generated output local.
 - Run repo-local validation that matches the changed surface.

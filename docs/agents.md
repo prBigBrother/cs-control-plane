@@ -28,12 +28,13 @@ Agent files live in packs:
 - `.opencode/agent-packs/control-plane/` contains Manager, Auditor, and Release.
 - `.opencode/agent-packs/repo/` contains Explorer, Implementer, and Validator.
 - `.opencode/agent-packs/common/` contains shared Linear and Datadog specialists.
-- `.opencode/agents/` is the active control-plane set.
+- `.opencode/agents/` is the active OpenCode set.
 
 `bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
 - `repo` shows common agents plus Explorer, Implementer, and Validator.
 - `control-plane` shows common agents plus Manager, Auditor, and Release.
 - `full` shows common agents plus all project agents.
+- the control-plane root defaults to `full` so Manager can delegate discovery, implementation, and validation to repo-scoped agents while still requiring product edits to happen in worktrees.
 
 ### Manager
 
@@ -207,7 +208,7 @@ Agent id:
 
 ### Single-repo task
 
-1. Create the worktree with `./bin/new-task`.
+1. Create the worktree with `./.opencode/bin/new-task`.
 2. Open OpenCode in that worktree.
 3. Use `explorer` if the scope is unclear.
 4. Use `implementer` once the path is clear.
@@ -229,7 +230,7 @@ Agent id:
 
 ### Release task
 
-1. Use `./bin/compare` to inspect deployed vs target SHA.
+1. Use `./.opencode/bin/compare` to inspect deployed vs target SHA.
 2. Use `/release-prepare` to create the `ops` release worktree, commit the release, push the branch, and open the PR.
 3. Review the created PR.
 

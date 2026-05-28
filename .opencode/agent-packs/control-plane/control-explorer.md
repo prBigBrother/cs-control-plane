@@ -21,7 +21,7 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
-    "./bin/*": allow
+    "./.opencode/bin/*": allow
 ---
 
 You inspect the control plane in read-only mode.
