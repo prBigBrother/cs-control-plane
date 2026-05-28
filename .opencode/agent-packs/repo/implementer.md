@@ -21,6 +21,11 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "graphify query *": allow
+    "graphify explain *": allow
+    "graphify path *": allow
+    "graphify affected *": allow
+    "graphify update *": allow
     "./bin/*": allow
     "./.opencode/bin/*": allow
     "npm run *": allow
@@ -42,6 +47,8 @@ Rules:
 - Align code changes with Linear acceptance criteria and call out any mismatch between Linear and repo reality.
 - Keep edits inside the assigned repo and requested scope.
 - Do not repeat broad exploration already completed by an Explorer; use its summary as the starting point.
+- Use Graphify query/path/explain/affected output as a guide when available, but verify code-changing assumptions in source files.
+- After meaningful code changes, update the relevant local Graphify graph with `graphify update .` or the shared helper when the graph exists; keep generated output local.
 - Run repo-local validation that matches the changed surface.
 - Before PR creation, rely on `/pr-create` to rerun root `lint` and `typecheck` scripts when present; fix failures before pushing.
 - Return changed files and validation results, not full logs.

@@ -2,6 +2,8 @@
 .env
 .envrc
 .opencode-state/
+graphify-out/
+knowledge/.graphify-out/
 repos/*/.env
 repos/*/node_modules
 repos/*/.next

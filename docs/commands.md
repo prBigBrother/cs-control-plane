@@ -22,6 +22,7 @@ Run these from the control-plane repo root because they create, remove, coordina
 - `/migration-audit`
 - `/compare`
 - `/compare-curl`
+- `/knowledge-bootstrap`
 - `/release-prepare`
 - `/workspace-status`
 
@@ -37,10 +38,11 @@ Run these from `worktrees/<repo>/ENG-<id>-<slug>/` while doing repo-local implem
 
 ### Either session
 
-These are safe in either place when the target repo/path is explicit:
+These are safe in either place when the target repo/path is explicit or the helper is installed in the repo session:
 
 - `/pr-comments <repo> <pr-number>`
 - `/pr-review <pr-url>`
+- `/knowledge-bootstrap [--dry-run|--extract] [--smoke]`
 - `/session-brief [repo-or-worktree-path]`
 - `/pr-create [worktree-path] [draft|ready]`
 - `/pr-create [repo eng-id] [draft|ready]`
@@ -369,6 +371,47 @@ Typical output:
 - `node_modules` link status
 - active control-plane agents
 
+### `/knowledge-bootstrap`
+
+Session:
+- control-plane preferred
+- either session when the shared helper is installed
+
+Purpose:
+- build the filtered first Graphify knowledge graph
+- keep `odin` and product non-code files out of the v1 graph
+- include control-plane docs and `knowledge/` notes as the narrative layer
+
+Use it when:
+- you need to dry-run the first Graphify corpus selection and cost estimate
+- you are ready to run a smoke extraction before full bootstrap
+- the merged local graph needs to be regenerated from the approved v1 sources
+
+Backed by:
+- `./bin/knowledge-bootstrap`
+- repo sessions receive this helper as `./.opencode/bin/knowledge-bootstrap`
+
+Usage:
+- `/knowledge-bootstrap`
+- `/knowledge-bootstrap --smoke --extract`
+- `/knowledge-bootstrap --smoke --extract --skip-control-docs`
+- `/knowledge-bootstrap --extract`
+
+Typical output:
+- included product repos and code file counts
+- excluded repo list
+- control-plane doc count and semantic cost estimate
+- local staging and merged graph paths
+- Graphify extraction or merge errors when extraction is requested
+
+Important behavior:
+- defaults to dry-run; pass `--extract` to run Graphify
+- never runs raw `graphify extract .` from the control-plane root
+- writes generated output under a local temp staging directory and ignored `graphify-out/`
+- the default OpenAI backend requires Graphify's tool environment to include `openai`; install with `uv tool install graphifyy --with openai --force`
+- `--skip-control-docs` validates product code extraction without semantic docs or API calls
+- use `--smoke --extract` before the full extraction
+
 ### `/cross-impl`
 
 Session:
@@ -485,6 +528,7 @@ Typical output:
 Script-backed commands:
 - `/compare` → `./bin/compare`
 - `/compare-curl` → `./bin/compare-curl`
+- `/knowledge-bootstrap` → `./bin/knowledge-bootstrap`
 - `/pr-create` → `./bin/pr-create`
 - `/pr-comments` → `./bin/pr-comments`
 - `/pr-review` → `./bin/pr-review`
@@ -500,6 +544,7 @@ Repo-session helper paths:
 - `/pr-comments` → `./.opencode/bin/pr-comments`
 - `/pr-review` → `./.opencode/bin/pr-review`
 - `/session-brief` → `./.opencode/bin/session-brief`
+- `/knowledge-bootstrap` → `./.opencode/bin/knowledge-bootstrap`
 
 Prompt-only commands:
 - `/cross-impl`

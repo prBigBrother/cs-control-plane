@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+INCLUDED_REPOS="daedalus dinah icarus olympus ops"
+EXCLUDED_REPOS="odin"
+DEFAULT_TMP="${TMPDIR:-/tmp}"
+DEFAULT_TMP="${DEFAULT_TMP%/}"
+BASE_DIR="${GRAPHIFY_BOOTSTRAP_DIR:-$DEFAULT_TMP/control-plane-graphify-bootstrap}"
+MERGED_GRAPH="$ROOT/graphify-out/merged-graph.json"
+BACKEND="${GRAPHIFY_BACKEND:-openai}"
+MODEL=""
+TOKEN_BUDGET=""
+MAX_CONCURRENCY=""
+EXTRACT=0
+SMOKE=0
+NO_CLUSTER=0
+SKIP_CONTROL_DOCS=0
+
+usage() {
+  cat <<'USAGE'
+Usage: knowledge-bootstrap [--dry-run] [--extract] [--smoke] [options]
+
+Build a filtered Graphify corpus for the first control-plane knowledge graph.
+
+Defaults:
+- dry-run only; pass --extract to run Graphify
+- includes product code from daedalus, dinah, icarus, olympus, and ops
+- excludes odin and product non-code files
+- includes control-plane docs, instructions, AGENTS.md, and knowledge notes
+- writes generated output under a local temp staging dir and graphify-out/
+
+Options:
+  --dry-run              print selected files/counts/cost estimate only (default)
+  --extract              stage the corpus, run Graphify, and merge graphs
+  --smoke                extract only ops plus control-plane docs
+  --backend NAME         Graphify backend for semantic docs (default: openai)
+  --model NAME           override Graphify model
+  --token-budget N       pass Graphify semantic token budget
+  --max-concurrency N    pass Graphify semantic concurrency
+  --no-cluster           pass Graphify --no-cluster
+  --skip-control-docs    extract product code only; no semantic docs/API calls
+  -h, --help             show this help
+
+Generated files are intentionally local and ignored by git.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      EXTRACT=0
+      shift
+      ;;
+    --extract)
+      EXTRACT=1
+      shift
+      ;;
+    --smoke)
+      SMOKE=1
+      shift
+      ;;
+    --backend)
+      [ "$#" -ge 2 ] || { echo "Error: --backend requires a value" >&2; exit 2; }
+      BACKEND="$2"
+      shift 2
+      ;;
+    --backend=*)
+      BACKEND="${1#*=}"
+      shift
+      ;;
+    --model)
+      [ "$#" -ge 2 ] || { echo "Error: --model requires a value" >&2; exit 2; }
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#*=}"
+      shift
+      ;;
+    --token-budget)
+      [ "$#" -ge 2 ] || { echo "Error: --token-budget requires a value" >&2; exit 2; }
+      TOKEN_BUDGET="$2"
+      shift 2
+      ;;
+    --token-budget=*)
+      TOKEN_BUDGET="${1#*=}"
+      shift
+      ;;
+    --max-concurrency)
+      [ "$#" -ge 2 ] || { echo "Error: --max-concurrency requires a value" >&2; exit 2; }
+      MAX_CONCURRENCY="$2"
+      shift 2
+      ;;
+    --max-concurrency=*)
+      MAX_CONCURRENCY="${1#*=}"
+      shift
+      ;;
+    --no-cluster)
+      NO_CLUSTER=1
+      shift
+      ;;
+    --skip-control-docs)
+      SKIP_CONTROL_DOCS=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+selected_repos() {
+  if [ "$SMOKE" -eq 1 ]; then
+    printf '%s\n' ops
+  else
+    printf '%s\n' $INCLUDED_REPOS
+  fi
+}
+
+lowercase() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+is_code_file() {
+  local rel
+  rel="$(lowercase "$1")"
+  case "$rel" in
+    *.py|*.ts|*.tsx|*.js|*.jsx|*.mjs|*.ejs|*.ets|*.go|*.rs|*.java|*.groovy|*.gradle|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|*.rb|*.swift|*.kt|*.kts|*.cs|*.scala|*.php|*.lua|*.luau|*.toc|*.zig|*.ps1|*.ex|*.exs|*.m|*.mm|*.jl|*.vue|*.svelte|*.astro|*.dart|*.v|*.sv|*.svh|*.sql|*.r|*.f|*.f90|*.f95|*.f03|*.f08|*.pas|*.pp|*.dpr|*.dpk|*.lpr|*.inc|*.dfm|*.lfm|*.lpk|*.sh|*.bash|*.json|*.sln|*.csproj|*.fsproj|*.vbproj|*.razor|*.cshtml)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_excluded_product_file() {
+  local rel
+  rel="$1"
+  case "$rel" in
+    .git/*|node_modules/*|.next/*|dist/*|build/*|coverage/*|.cache/*|logs/*|secrets/*|.secrets/*|storage/*|tmp/*|vendor/*|graphify-out/*|.opencode/node_modules/*)
+      return 0
+      ;;
+    package-lock.json|npm-shrinkwrap.json|pnpm-lock.yaml|yarn.lock|composer.lock|Gemfile.lock|Cargo.lock|*.lock|*.map|*.min.js)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+find_repo_files() {
+  local repo_path="$1"
+  find "$repo_path" \
+    \( -type d \( -name .git -o -name node_modules -o -name .next -o -name dist -o -name build -o -name coverage -o -name .cache -o -name logs -o -name secrets -o -name .secrets -o -name storage -o -name tmp -o -name vendor -o -name graphify-out \) -prune \) \
+    -o -type f -print
+}
+
+find_control_docs() {
+  if [ -f "$ROOT/AGENTS.md" ]; then
+    printf '%s\n' "$ROOT/AGENTS.md"
+  fi
+
+  for dir in "$ROOT/docs" "$ROOT/instructions" "$ROOT/knowledge"; do
+    [ -d "$dir" ] || continue
+    find "$dir" -type f \( -name '*.md' -o -name '*.txt' -o -name '*.yml' -o -name '*.yaml' \) -print
+  done
+}
+
+copy_into_corpus() {
+  local src="$1"
+  local source_root="$2"
+  local dest_root="$3"
+  local rel="$4"
+  local dest="$dest_root/$rel"
+
+  mkdir -p "$(dirname "$dest")"
+  cp -p "$src" "$dest"
+}
+
+count_repo_code_files() {
+  local repo="$1"
+  local repo_path="$ROOT/repos/$repo"
+  local count=0
+  local path rel
+
+  [ -d "$repo_path" ] || {
+    echo "Error: repo not found: repos/$repo" >&2
+    exit 3
+  }
+
+  while IFS= read -r path; do
+    rel="${path#"$repo_path"/}"
+    if is_excluded_product_file "$rel"; then
+      continue
+    fi
+    if is_code_file "$rel"; then
+      count=$((count + 1))
+    fi
+  done < <(find_repo_files "$repo_path")
+
+  printf '%s\n' "$count"
+}
+
+stage_repo_code() {
+  local repo="$1"
+  local repo_path="$ROOT/repos/$repo"
+  local dest_root="$BASE_DIR/corpus/$repo"
+  local count=0
+  local path rel
+
+  while IFS= read -r path; do
+    rel="${path#"$repo_path"/}"
+    if is_excluded_product_file "$rel"; then
+      continue
+    fi
+    if is_code_file "$rel"; then
+      copy_into_corpus "$path" "$repo_path" "$dest_root" "$rel"
+      count=$((count + 1))
+    fi
+  done < <(find_repo_files "$repo_path")
+
+  printf '%s\n' "$count"
+}
+
+control_doc_stats() {
+  local count=0
+  local bytes=0
+  local path size
+
+  while IFS= read -r path; do
+    [ -f "$path" ] || continue
+    size="$(wc -c < "$path" | tr -d ' ')"
+    bytes=$((bytes + size + 80))
+    count=$((count + 1))
+  done < <(find_control_docs)
+
+  printf '%s %s\n' "$count" "$bytes"
+}
+
+stage_control_docs() {
+  local dest_root="$BASE_DIR/corpus/control-plane"
+  local count=0
+  local path rel
+
+  while IFS= read -r path; do
+    [ -f "$path" ] || continue
+    rel="${path#"$ROOT"/}"
+    copy_into_corpus "$path" "$ROOT" "$dest_root" "$rel"
+    count=$((count + 1))
+  done < <(find_control_docs)
+
+  printf '%s\n' "$count"
+}
+
+print_plan() {
+  local stats doc_count doc_bytes input_tokens output_tokens cost
+  local repo count
+
+  if [ "$SKIP_CONTROL_DOCS" -eq 1 ]; then
+    doc_count=0
+    input_tokens=0
+    cost="0.0000"
+  else
+    stats="$(control_doc_stats)"
+    doc_count="${stats%% *}"
+    doc_bytes="${stats#* }"
+    input_tokens=$(((doc_bytes + 3) / 4))
+    output_tokens=$((input_tokens / 5))
+    cost="$(awk -v input="$input_tokens" -v output="$output_tokens" 'BEGIN { printf "%.4f", (input * 0.40 / 1000000) + (output * 1.60 / 1000000) }')"
+  fi
+
+  echo "Graphify knowledge bootstrap"
+  if [ "$EXTRACT" -eq 1 ]; then
+    echo "Mode: extract"
+  else
+    echo "Mode: dry-run"
+  fi
+  if [ "$SMOKE" -eq 1 ]; then
+    echo "Scope: smoke"
+  else
+    echo "Scope: non-odin product repos"
+  fi
+  echo
+  echo "Included product repos:"
+  while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    count="$(count_repo_code_files "$repo")"
+    printf -- "- %s: %s code files\n" "$repo" "$count"
+  done < <(selected_repos)
+  echo
+  echo "Excluded product repos:"
+  printf -- "- %s\n" $EXCLUDED_REPOS
+  echo
+  echo "Control-plane narrative docs:"
+  if [ "$SKIP_CONTROL_DOCS" -eq 1 ]; then
+    printf -- "- skipped by --skip-control-docs\n"
+  else
+    printf -- "- files: %s\n" "$doc_count"
+    printf -- "- estimated semantic input tokens: %s\n" "$input_tokens"
+    printf -- "- estimated OpenAI cost at 20%% output: \$%s\n" "$cost"
+  fi
+  echo
+  echo "Generated output:"
+  printf -- "- staging: %s\n" "${BASE_DIR#"$ROOT"/}"
+  printf -- "- merged graph: %s\n" "${MERGED_GRAPH#"$ROOT"/}"
+}
+
+graphify_args() {
+  [ -n "$MODEL" ] && printf '%s\n' --model "$MODEL"
+  [ -n "$TOKEN_BUDGET" ] && printf '%s\n' --token-budget "$TOKEN_BUDGET"
+  [ -n "$MAX_CONCURRENCY" ] && printf '%s\n' --max-concurrency "$MAX_CONCURRENCY"
+  [ "$NO_CLUSTER" -eq 1 ] && printf '%s\n' --no-cluster
+}
+
+run_extract() {
+  local repo count corpus out graph
+  local graphs=()
+  local extra_args=()
+  local graph_size
+  local graphify_bin graphify_python
+
+  if ! command -v graphify >/dev/null 2>&1; then
+    echo "Error: graphify command not found. Install graphifyy first." >&2
+    exit 4
+  fi
+
+  graphify_bin="$(command -v graphify)"
+  graphify_python="$(sed -n '1s/^#!//p' "$graphify_bin" 2>/dev/null || true)"
+  if [ "$SKIP_CONTROL_DOCS" -eq 0 ] && [ "$BACKEND" = "openai" ] && [ -n "$graphify_python" ] && [ -x "$graphify_python" ]; then
+    if ! "$graphify_python" -c 'import openai' >/dev/null 2>&1; then
+      echo "Error: Graphify's uv tool environment is missing the openai package." >&2
+      echo "Install it with: uv tool install graphifyy --with openai --force" >&2
+      exit 4
+    fi
+  fi
+
+  while IFS= read -r arg; do
+    extra_args+=("$arg")
+  done < <(graphify_args)
+
+  rm -rf "$BASE_DIR"
+  mkdir -p "$BASE_DIR/corpus" "$BASE_DIR/out"
+
+  while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    count="$(stage_repo_code "$repo")"
+    corpus="$BASE_DIR/corpus/$repo"
+    out="$BASE_DIR/out/$repo"
+    echo
+    printf 'Extracting %s (%s code files)...\n' "$repo" "$count"
+    graphify extract "$corpus" --backend "$BACKEND" --out "$out" "${extra_args[@]}"
+    graph="$out/graphify-out/graph.json"
+    [ -f "$graph" ] || { echo "Error: missing graph: $graph" >&2; exit 5; }
+    graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
+    if [ "$graph_size" -gt 0 ]; then
+      graphs+=("$graph")
+    else
+      printf 'Warning: skipping empty graph for %s\n' "$repo" >&2
+    fi
+  done < <(selected_repos)
+
+  if [ "$SKIP_CONTROL_DOCS" -eq 0 ]; then
+    count="$(stage_control_docs)"
+    corpus="$BASE_DIR/corpus/control-plane"
+    out="$BASE_DIR/out/control-plane"
+    echo
+    printf 'Extracting control-plane docs (%s files)...\n' "$count"
+    graphify extract "$corpus" --backend "$BACKEND" --out "$out" "${extra_args[@]}"
+    graph="$out/graphify-out/graph.json"
+    [ -f "$graph" ] || { echo "Error: missing graph: $graph" >&2; exit 5; }
+    graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
+    if [ "$graph_size" -gt 0 ]; then
+      graphs+=("$graph")
+    else
+      printf 'Warning: skipping empty graph for control-plane docs\n' >&2
+    fi
+  else
+    echo
+    echo "Skipping control-plane docs by request."
+  fi
+
+  mkdir -p "$(dirname "$MERGED_GRAPH")"
+  echo
+  if [ "${#graphs[@]}" -eq 0 ]; then
+    echo "Error: no non-empty graphs were produced" >&2
+    exit 6
+  elif [ "${#graphs[@]}" -eq 1 ]; then
+    printf 'Only one non-empty graph produced; copying it to merged output...\n'
+    cp -p "${graphs[0]}" "$MERGED_GRAPH"
+  else
+    printf 'Merging %s graphs...\n' "${#graphs[@]}"
+    graphify merge-graphs "${graphs[@]}" --out "$MERGED_GRAPH"
+  fi
+  echo
+  printf 'Merged graph written to %s\n' "${MERGED_GRAPH#"$ROOT"/}"
+}
+
+print_plan
+
+if [ "$EXTRACT" -eq 0 ]; then
+  echo
+  echo "Dry run only. Re-run with --extract to stage files and run Graphify."
+  exit 0
+fi
+
+run_extract
