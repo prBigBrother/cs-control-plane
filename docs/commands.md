@@ -395,6 +395,7 @@ Usage:
 - `/knowledge-bootstrap`
 - `/knowledge-bootstrap --smoke --extract`
 - `/knowledge-bootstrap --smoke --extract --skip-control-docs`
+- `/knowledge-bootstrap --merge-existing --no-cluster --skip-control-docs`
 - `/knowledge-bootstrap --extract`
 
 Typical output:
@@ -406,6 +407,7 @@ Typical output:
 
 Important behavior:
 - defaults to dry-run; pass `--extract` to run Graphify
+- use `--merge-existing --no-cluster --skip-control-docs` to repair a raw merge after extraction already finished
 - never runs raw `graphify extract .` from the control-plane root
 - writes generated output under a local temp staging directory and ignored `graphify-out/`
 - the default OpenAI backend requires Graphify's tool environment to include `openai`; install with `uv tool install graphifyy --with openai --force`

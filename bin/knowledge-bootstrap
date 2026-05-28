@@ -15,13 +15,14 @@ MODEL=""
 TOKEN_BUDGET=""
 MAX_CONCURRENCY=""
 EXTRACT=0
+MERGE_EXISTING=0
 SMOKE=0
 NO_CLUSTER=0
 SKIP_CONTROL_DOCS=0
 
 usage() {
   cat <<'USAGE'
-Usage: knowledge-bootstrap [--dry-run] [--extract] [--smoke] [options]
+Usage: knowledge-bootstrap [--dry-run] [--extract] [--merge-existing] [--smoke] [options]
 
 Build a filtered Graphify corpus for the first control-plane knowledge graph.
 
@@ -35,6 +36,7 @@ Defaults:
 Options:
   --dry-run              print selected files/counts/cost estimate only (default)
   --extract              stage the corpus, run Graphify, and merge graphs
+  --merge-existing       merge existing staged graph outputs without extraction
   --smoke                extract only ops plus control-plane docs
   --backend NAME         Graphify backend for semantic docs (default: openai)
   --model NAME           override Graphify model
@@ -56,6 +58,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --extract)
       EXTRACT=1
+      shift
+      ;;
+    --merge-existing)
+      MERGE_EXISTING=1
       shift
       ;;
     --smoke)
@@ -282,6 +288,8 @@ print_plan() {
   echo "Graphify knowledge bootstrap"
   if [ "$EXTRACT" -eq 1 ]; then
     echo "Mode: extract"
+  elif [ "$MERGE_EXISTING" -eq 1 ]; then
+    echo "Mode: merge-existing"
   else
     echo "Mode: dry-run"
   fi
@@ -325,9 +333,11 @@ graphify_args() {
 run_extract() {
   local repo count corpus out graph
   local graphs=()
+  local graph_specs=()
   local extra_args=()
   local graph_size
   local graphify_bin graphify_python
+  local empty_repos=()
 
   if ! command -v graphify >/dev/null 2>&1; then
     echo "Error: graphify command not found. Install graphifyy first." >&2
@@ -364,10 +374,17 @@ run_extract() {
     graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
     if [ "$graph_size" -gt 0 ]; then
       graphs+=("$graph")
+      graph_specs+=("$repo:$graph")
     else
-      printf 'Warning: skipping empty graph for %s\n' "$repo" >&2
+      empty_repos+=("$repo")
+      printf 'Error: %s produced an empty graph from %s staged code files\n' "$repo" "$count" >&2
     fi
   done < <(selected_repos)
+
+  if [ "${#empty_repos[@]}" -gt 0 ]; then
+    printf 'Error: Graphify extraction produced empty product graph(s): %s\n' "${empty_repos[*]}" >&2
+    exit 6
+  fi
 
   if [ "$SKIP_CONTROL_DOCS" -eq 0 ]; then
     count="$(stage_control_docs)"
@@ -381,6 +398,7 @@ run_extract() {
     graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
     if [ "$graph_size" -gt 0 ]; then
       graphs+=("$graph")
+      graph_specs+=("control-plane:$graph")
     else
       printf 'Warning: skipping empty graph for control-plane docs\n' >&2
     fi
@@ -397,6 +415,9 @@ run_extract() {
   elif [ "${#graphs[@]}" -eq 1 ]; then
     printf 'Only one non-empty graph produced; copying it to merged output...\n'
     cp -p "${graphs[0]}" "$MERGED_GRAPH"
+  elif [ "$NO_CLUSTER" -eq 1 ]; then
+    printf 'Merging %s raw extraction graphs...\n' "${#graph_specs[@]}"
+    merge_raw_graphs "$MERGED_GRAPH" "${graph_specs[@]}"
   else
     printf 'Merging %s graphs...\n' "${#graphs[@]}"
     graphify merge-graphs "${graphs[@]}" --out "$MERGED_GRAPH"
@@ -405,7 +426,156 @@ run_extract() {
   printf 'Merged graph written to %s\n' "${MERGED_GRAPH#"$ROOT"/}"
 }
 
+run_merge_existing() {
+  local repo graph graph_size
+  local graphs=()
+  local graph_specs=()
+
+  while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    graph="$BASE_DIR/out/$repo/graphify-out/graph.json"
+    if [ ! -f "$graph" ]; then
+      echo "Error: missing existing graph for $repo: $graph" >&2
+      exit 5
+    fi
+    graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
+    if [ "$graph_size" -le 0 ]; then
+      echo "Error: existing graph for $repo is empty: $graph" >&2
+      exit 6
+    fi
+    graphs+=("$graph")
+    graph_specs+=("$repo:$graph")
+  done < <(selected_repos)
+
+  if [ "$SKIP_CONTROL_DOCS" -eq 0 ]; then
+    graph="$BASE_DIR/out/control-plane/graphify-out/graph.json"
+    if [ ! -f "$graph" ]; then
+      echo "Error: missing existing control-plane graph: $graph" >&2
+      exit 5
+    fi
+    graph_size="$(jq '(.nodes | length) + (.edges | length)' "$graph" 2>/dev/null || printf '0')"
+    if [ "$graph_size" -gt 0 ]; then
+      graphs+=("$graph")
+      graph_specs+=("control-plane:$graph")
+    else
+      echo "Warning: existing control-plane graph is empty; skipping it" >&2
+    fi
+  else
+    echo
+    echo "Skipping control-plane docs by request."
+  fi
+
+  mkdir -p "$(dirname "$MERGED_GRAPH")"
+  echo
+  if [ "${#graphs[@]}" -eq 1 ]; then
+    printf 'Only one existing graph found; copying it to merged output...\n'
+    cp -p "${graphs[0]}" "$MERGED_GRAPH"
+  elif [ "$NO_CLUSTER" -eq 1 ]; then
+    printf 'Merging %s existing raw extraction graphs...\n' "${#graph_specs[@]}"
+    merge_raw_graphs "$MERGED_GRAPH" "${graph_specs[@]}"
+  else
+    printf 'Merging %s existing graphs...\n' "${#graphs[@]}"
+    graphify merge-graphs "${graphs[@]}" --out "$MERGED_GRAPH"
+  fi
+  echo
+  printf 'Merged graph written to %s\n' "${MERGED_GRAPH#"$ROOT"/}"
+}
+
+merge_raw_graphs() {
+  local out_path="$1"
+  shift
+
+  mkdir -p "$(dirname "$out_path")"
+  node - "$out_path" "$@" <<'NODE'
+const fs = require("node:fs")
+const path = require("node:path")
+
+const [, , outPath, ...specs] = process.argv
+const merged = {
+  nodes: [],
+  edges: [],
+  hyperedges: [],
+  input_tokens: 0,
+  output_tokens: 0,
+}
+const seenNodes = new Set()
+const seenEdges = new Set()
+const seenHyperedges = new Set()
+
+function prefixed(repo, id) {
+  return `${repo}::${id}`
+}
+
+for (const spec of specs) {
+  const sep = spec.indexOf(":")
+  if (sep <= 0) {
+    throw new Error(`invalid graph spec: ${spec}`)
+  }
+
+  const repo = spec.slice(0, sep)
+  const graphPath = spec.slice(sep + 1)
+  const graph = JSON.parse(fs.readFileSync(graphPath, "utf8"))
+  merged.input_tokens += Number(graph.input_tokens || 0)
+  merged.output_tokens += Number(graph.output_tokens || 0)
+
+  for (const node of graph.nodes || []) {
+    if (!node.id) continue
+    const id = prefixed(repo, node.id)
+    if (seenNodes.has(id)) continue
+    seenNodes.add(id)
+    merged.nodes.push({
+      ...node,
+      id,
+      repo,
+      local_id: node.local_id || node.id,
+    })
+  }
+
+  for (const edge of graph.edges || []) {
+    if (!edge.source || !edge.target) continue
+    const next = {
+      ...edge,
+      source: prefixed(repo, edge.source),
+      target: prefixed(repo, edge.target),
+      repo,
+    }
+    const key = JSON.stringify([
+      next.source,
+      next.target,
+      next.relation || "",
+      next.source_file || "",
+      next.source_location || "",
+    ])
+    if (seenEdges.has(key)) continue
+    seenEdges.add(key)
+    merged.edges.push(next)
+  }
+
+  for (const hyperedge of graph.hyperedges || []) {
+    const next = { ...hyperedge, repo }
+    if (Array.isArray(next.nodes)) {
+      next.nodes = next.nodes.map((id) => prefixed(repo, id))
+    }
+    const key = JSON.stringify(next)
+    if (seenHyperedges.has(key)) continue
+    seenHyperedges.add(key)
+    merged.hyperedges.push(next)
+  }
+}
+
+fs.mkdirSync(path.dirname(outPath), { recursive: true })
+fs.writeFileSync(outPath, `${JSON.stringify(merged, null, 2)}\n`)
+console.log(`Merged ${specs.length} raw graphs -> ${merged.nodes.length} nodes, ${merged.edges.length} edges`)
+console.log(`Written to: ${outPath}`)
+NODE
+}
+
 print_plan
+
+if [ "$MERGE_EXISTING" -eq 1 ]; then
+  run_merge_existing
+  exit 0
+fi
 
 if [ "$EXTRACT" -eq 0 ]; then
   echo
