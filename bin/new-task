@@ -23,39 +23,114 @@ link_globbed_env_files() {
   local source_dir="$1"
   local target_dir="$2"
 
+  [ -d "$source_dir" ] || return 0
+
   for env_file in "$source_dir"/.env*; do
     [ -f "$env_file" ] || continue
     link_if_missing "$env_file" "$target_dir/$(basename "$env_file")"
   done
 }
 
-link_runtime_assets() {
-  local repo_path="$1"
-  local worktree_path="$2"
+locks_match() {
+  local source_dir="$1"
+  local target_dir="$2"
 
-  # Link root node_modules when present in the base checkout.
-  if [ -f "$repo_path/package.json" ] && [ -d "$repo_path/node_modules" ]; then
-    link_if_missing "$repo_path/node_modules" "$worktree_path/node_modules"
-  elif [ -f "$repo_path/package.json" ]; then
-    echo "Warning: $repo_path/node_modules is missing; run ./bin/bootstrap before creating worktrees if you want node_modules linked." >&2
+  [ -f "$source_dir/package-lock.json" ] || return 1
+  [ -f "$target_dir/package-lock.json" ] || return 1
+  cmp -s "$source_dir/package-lock.json" "$target_dir/package-lock.json"
+}
+
+ensure_node_modules_link() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local source_path="$source_dir/node_modules"
+  local target_path="$target_dir/node_modules"
+  local current=""
+
+  if [ ! -d "$source_path" ]; then
+    return 1
   fi
 
-  # Link repo-level env files such as .env and .env.local.
-  link_globbed_env_files "$repo_path" "$worktree_path"
+  if [ -L "$target_path" ]; then
+    current="$(readlink "$target_path")"
+    if [ "$current" = "$source_path" ]; then
+      return 0
+    fi
+    rm "$target_path"
+  elif [ -e "$target_path" ]; then
+    return 1
+  fi
 
-  # Link package node_modules and env files for workspace-style repos.
-  if [ -d "$repo_path/packages" ]; then
+  mkdir -p "$target_dir"
+  ln -s "$source_path" "$target_path"
+}
+
+remove_node_modules_symlink() {
+  local target_dir="$1"
+
+  if [ -L "$target_dir/node_modules" ]; then
+    rm "$target_dir/node_modules"
+  fi
+}
+
+prepare_node_dependencies() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local label="$3"
+
+  [ -f "$target_dir/package.json" ] || return 0
+
+  if [ "$INSTALL_DEPS" -eq 0 ]; then
+    if locks_match "$source_dir" "$target_dir" && ensure_node_modules_link "$source_dir" "$target_dir"; then
+      echo "Linked $label node_modules from base checkout."
+    elif [ ! -e "$target_dir/node_modules" ] && [ ! -L "$target_dir/node_modules" ]; then
+      echo "Warning: $label node_modules missing and --no-install was passed." >&2
+    fi
+    return 0
+  fi
+
+  if [ ! -f "$target_dir/package-lock.json" ]; then
+    if ensure_node_modules_link "$source_dir" "$target_dir"; then
+      echo "Linked $label node_modules from base checkout."
+    elif [ ! -e "$target_dir/node_modules" ] && [ ! -L "$target_dir/node_modules" ]; then
+      echo "Warning: $label has no package-lock.json and no reusable node_modules; skipping dependency install." >&2
+    fi
+    return 0
+  fi
+
+  if [ "$FORCE_INSTALL" -eq 0 ]; then
+    if [ -d "$target_dir/node_modules" ] && [ ! -L "$target_dir/node_modules" ]; then
+      echo "Using existing local $label node_modules."
+      return 0
+    fi
+  fi
+
+  remove_node_modules_symlink "$target_dir"
+  echo "Installing $label dependencies in worktree..."
+  npm -C "$target_dir" ci
+}
+
+prepare_runtime_assets() {
+  local repo_path="$1"
+  local worktree_path="$2"
+  local package_json package_dir relative_dir source_dir
+
+  # Link repo-level env files such as .env and .env.local, then prepare root deps.
+  link_globbed_env_files "$repo_path" "$worktree_path"
+  prepare_node_dependencies "$repo_path" "$worktree_path" "$REPO"
+
+  # Link package env files and prepare package-local deps when they have their own lockfile.
+  if [ -d "$worktree_path/packages" ]; then
     while IFS= read -r package_json; do
       package_dir="$(dirname "$package_json")"
-      relative_dir="${package_dir#"$repo_path"/}"
-      target_dir="$worktree_path/$relative_dir"
+      relative_dir="${package_dir#"$worktree_path"/}"
+      source_dir="$repo_path/$relative_dir"
 
-      if [ -d "$package_dir/node_modules" ]; then
-        link_if_missing "$package_dir/node_modules" "$target_dir/node_modules"
-      fi
-
-      link_globbed_env_files "$package_dir" "$target_dir"
-    done < <(find "$repo_path/packages" -mindepth 2 -maxdepth 4 -name package.json | sort)
+      link_globbed_env_files "$source_dir" "$package_dir"
+      prepare_node_dependencies "$source_dir" "$package_dir" "$REPO/$relative_dir"
+    done < <(find "$worktree_path/packages" -mindepth 2 -maxdepth 4 \
+      -path "*/node_modules/*" -prune -o \
+      -name package.json -print | sort)
   fi
 }
 
@@ -76,15 +151,52 @@ run_post_setup() {
   (cd "$worktree_path" && npm run db:generate)
 }
 
-if [ "$#" -lt 2 ]; then
-  echo "Usage: new-task <repo> <eng-id> [slug] [type]" >&2
+INSTALL_DEPS=1
+FORCE_INSTALL=0
+POSITIONAL=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-install)
+      INSTALL_DEPS=0
+      shift
+      ;;
+    --force-install)
+      FORCE_INSTALL=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: new-task [--no-install] [--force-install] <repo> <eng-id> [slug] [type]"
+      exit 0
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        POSITIONAL+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      echo "Usage: new-task [--no-install] [--force-install] <repo> <eng-id> [slug] [type]" >&2
+      exit 2
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ "${#POSITIONAL[@]}" -lt 2 ]; then
+  echo "Usage: new-task [--no-install] [--force-install] <repo> <eng-id> [slug] [type]" >&2
   exit 1
 fi
 
-REPO="$1"
-ENG_ID="$2"
-SLUG="${3:-}"
-TYPE="${4:-feature}"
+REPO="${POSITIONAL[0]}"
+ENG_ID="${POSITIONAL[1]}"
+SLUG="${POSITIONAL[2]:-}"
+TYPE="${POSITIONAL[3]:-feature}"
 REPO_PATH="$ROOT/repos/$REPO"
 
 case "$SLUG" in
@@ -125,7 +237,7 @@ git -C "$REPO_PATH" fetch origin main:refs/remotes/origin/main
 BASE_REF="origin/main"
 
 if [ -f "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH/.git" ] || [ -d "$WORKTREE_PATH" ]; then
-  link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
+  prepare_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
   "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo >/dev/null
   run_post_setup "$REPO" "$WORKTREE_PATH"
   echo "$WORKTREE_PATH"
@@ -138,7 +250,7 @@ if [ -f "$REPO_PATH/AGENTS.md" ]; then
   cp "$REPO_PATH/AGENTS.md" "$WORKTREE_PATH/AGENTS.md"
 fi
 
-link_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
+prepare_runtime_assets "$REPO_PATH" "$WORKTREE_PATH"
 
 "$ROOT/bin/install-local-opencode" "$WORKTREE_PATH" engineering repo
 run_post_setup "$REPO" "$WORKTREE_PATH"

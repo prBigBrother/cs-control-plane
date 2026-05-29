@@ -16,6 +16,9 @@ Checks:
 - command files have description frontmatter
 - repeated output-format boilerplate has not returned
 - OpenCode JSON profiles parse
+- control-plane profiles default to Manager and repo profiles default to Explorer
+- the built-in Build agent is disabled in every shared profile
+- Manager and repo agents handle setup failures before product validation
 - Linear and Datadog MCPs are enabled but hidden globally
 - Linear and Datadog specialist agents have explicit MCP tool access
 USAGE
@@ -58,6 +61,21 @@ frontmatter_has() {
   ' "$file" | grep -Eq "$pattern"
 }
 
+frontmatter_field() {
+  local file="$1"
+  local key="$2"
+
+  awk -v key="$key" '
+    NR == 1 && $0 == "---" { in_frontmatter = 1; next }
+    in_frontmatter && $0 == "---" { exit }
+    in_frontmatter && $0 ~ ("^" key ":[[:space:]]*") {
+      sub("^[^:]+:[[:space:]]*", "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
 agent_files=()
 while IFS= read -r file; do
   agent_files+=("$file")
@@ -78,7 +96,7 @@ for file in "${agent_files[@]}"; do
   frontmatter_has "$file" '^description:' || fail "$rel missing description"
   case "$rel" in
     .opencode/agent-packs/repo/explorer.md)
-      frontmatter_has "$file" '^mode: all$' || fail "$rel should use mode all so engineering can default to explorer while manager can delegate to it"
+      frontmatter_has "$file" '^mode: all$' || fail "$rel should use mode all so repo profiles can default to explorer while manager can delegate to it"
       ;;
     *)
       frontmatter_has "$file" '^mode: (primary|subagent)$' || fail "$rel should use mode primary or subagent"
@@ -86,6 +104,23 @@ for file in "${agent_files[@]}"; do
   esac
   frontmatter_has "$file" '^steps:' || fail "$rel missing steps"
   frontmatter_has "$file" '^permission:' || fail "$rel missing permission"
+
+  min_steps=0
+  case "$rel" in
+    .opencode/agent-packs/control-plane/manager.md) min_steps=16 ;;
+    .opencode/agent-packs/repo/explorer.md) min_steps=12 ;;
+    .opencode/agent-packs/repo/implementer.md) min_steps=30 ;;
+    .opencode/agent-packs/repo/validator.md) min_steps=10 ;;
+  esac
+
+  if [ "$min_steps" -gt 0 ]; then
+    steps="$(frontmatter_field "$file" steps)"
+    if ! [[ "$steps" =~ ^[0-9]+$ ]]; then
+      fail "$rel steps should be numeric"
+    elif [ "$steps" -lt "$min_steps" ]; then
+      fail "$rel steps should be at least $min_steps"
+    fi
+  fi
 
   if grep -qE '^(Output format:|- Write normal Markdown|- Format URLs as Markdown links)' "$file"; then
     fail "$rel has repeated output boilerplate"
@@ -117,7 +152,12 @@ for file in "${command_files[@]}"; do
   fi
 done
 
-json_files=("$ROOT/opencode.json" "$ROOT/opencode.migration.json")
+json_files=(
+  "$ROOT/opencode.json"
+  "$ROOT/opencode.repo.json"
+  "$ROOT/opencode.migration.json"
+  "$ROOT/opencode.migration.repo.json"
+)
 
 for file in "${json_files[@]}"; do
   rel="${file#"$ROOT"/}"
@@ -133,7 +173,7 @@ for file in "${json_files[@]}"; do
   [ "$VERBOSE" -eq 0 ] || printf 'profile %-24s enabled_mcp=%s\n' "$rel" "$enabled"
 done
 
-for profile in opencode.json opencode.migration.json; do
+for profile in opencode.json opencode.repo.json opencode.migration.json opencode.migration.repo.json; do
   file="$ROOT/$profile"
   for key in linear datadog; do
     enabled="$(jq -r --arg key "$key" 'if (.mcp | has($key)) then (.mcp[$key].enabled | tostring) else "missing" end' "$file")"
@@ -154,10 +194,26 @@ for profile in opencode.json opencode.migration.json; do
   done
 done
 
-default_agent="$(jq -r '.default_agent // empty' "$ROOT/opencode.json")"
-if [ "$default_agent" != "explorer" ]; then
-  fail "opencode.json should set default_agent to explorer"
-fi
+for profile in opencode.json opencode.migration.json; do
+  default_agent="$(jq -r '.default_agent // empty' "$ROOT/$profile")"
+  if [ "$default_agent" != "manager" ]; then
+    fail "$profile should set default_agent to manager"
+  fi
+done
+
+for profile in opencode.repo.json opencode.migration.repo.json; do
+  default_agent="$(jq -r '.default_agent // empty' "$ROOT/$profile")"
+  if [ "$default_agent" != "explorer" ]; then
+    fail "$profile should set default_agent to explorer"
+  fi
+done
+
+for profile in opencode.json opencode.repo.json opencode.migration.json opencode.migration.repo.json; do
+  build_disabled="$(jq -r '.agent.build.disable // false' "$ROOT/$profile")"
+  if [ "$build_disabled" != "true" ]; then
+    fail "$profile should disable the built-in Build agent"
+  fi
+done
 
 if ! frontmatter_has "$ROOT/.opencode/agent-packs/common/linear-operator.md" '^  linear_\*: true$'; then
   fail "linear-operator should enable linear_* tools"
@@ -182,6 +238,69 @@ fi
 if ! frontmatter_has "$ROOT/.opencode/agent-packs/control-plane/manager.md" '^    "linear-operator": allow$'; then
   fail "manager should be able to delegate to linear-operator"
 fi
+
+if ! frontmatter_has "$ROOT/.opencode/agent-packs/control-plane/manager.md" '^    "implementer": allow$'; then
+  fail "manager should be able to delegate to implementer without prompting"
+fi
+
+if ! grep -qF '/task-start --force-install' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
+  fail "manager should repair dependency setup with /task-start --force-install"
+fi
+
+if ! grep -qF 'step limit' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
+  fail "manager should continue work when subagents hit step limits"
+fi
+
+if ! grep -qF 'Completion Gate:' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
+  fail "manager should require a Completion Gate in final output"
+fi
+
+for file in \
+  "$ROOT/.opencode/agent-packs/control-plane/manager.md" \
+  "$ROOT/.opencode/agent-packs/control-plane/control-explorer.md" \
+  "$ROOT/.opencode/agent-packs/control-plane/auditor.md" \
+  "$ROOT/.opencode/agent-packs/control-plane/release.md" \
+  "$ROOT/.opencode/agent-packs/repo/explorer.md" \
+  "$ROOT/.opencode/agent-packs/repo/implementer.md" \
+  "$ROOT/.opencode/agent-packs/repo/validator.md"; do
+  rel="${file#"$ROOT"/}"
+  for pattern in \
+    '    "git status*": allow' \
+    '    "git diff*": allow' \
+    '    "git log*": allow' \
+    '    "git show*": allow' \
+    '    "git branch*": allow' \
+    '    "git rev-parse*": allow' \
+    '    "git ls-files*": allow'; do
+    if ! grep -qF "$pattern" "$file"; then
+      fail "$rel should allow read-only git diagnostic: $pattern"
+    fi
+  done
+
+  for broad_pattern in \
+    '    "git *": allow' \
+    '    "npm *": allow' \
+    '    "pnpm *": allow' \
+    '    "yarn *": allow' \
+    '    "bun *": allow'; do
+    if grep -qF "$broad_pattern" "$file"; then
+      fail "$rel should not allow broad git/package-manager shell access: $broad_pattern"
+    fi
+  done
+
+  if ! grep -qF 'Avoid chaining commands' "$file"; then
+    fail "$rel should tell agents to avoid chained diagnostic commands"
+  fi
+done
+
+for file in \
+  "$ROOT/.opencode/agent-packs/repo/implementer.md" \
+  "$ROOT/.opencode/agent-packs/repo/validator.md"; do
+  rel="${file#"$ROOT"/}"
+  if ! grep -qF 'missing modules' "$file" || ! grep -qF 'setup failures' "$file"; then
+    fail "$rel should classify missing dependencies as setup failures"
+  fi
+done
 
 if [ "$failures" -ne 0 ]; then
   printf '\n%d audit failure(s)\n' "$failures" >&2

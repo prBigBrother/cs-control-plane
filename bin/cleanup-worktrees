@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: cleanup-worktrees [options]
+
+Bulk clean task worktrees under worktrees/<repo>/ENG-<id>-<slug>.
+
+Options:
+  --apply                 Remove clean matching worktrees. Without this, only preview.
+  --repo <repo>           Only include one repo.
+  --eng-id <ENG-id>       Only include one ENG id, for example ENG-123.
+  --force-dirty           Force-remove dirty matching worktrees without prompting.
+  --include-non-task      Include non-ENG worktrees, such as release worktrees.
+  -h, --help              Show this help.
+
+Dirty worktrees are never removed silently. In an interactive shell, --apply prompts
+before force-removing each dirty worktree. In a non-interactive shell, dirty worktrees
+are skipped unless --force-dirty is passed.
+EOF
+}
+
+display_path() {
+  local path="$1"
+  printf '%s\n' "${path#"$ROOT"/}"
+}
+
+is_yes() {
+  case "$1" in
+    y|Y|yes|YES|Yes)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_task_worktree_name() {
+  case "$1" in
+    ENG-*-*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+worktree_eng_id() {
+  local name="$1"
+  case "$name" in
+    ENG-*-*)
+      printf '%s\n' "${name%%-*}-${name#*-}" | cut -d- -f1-2
+      ;;
+    *)
+      printf '\n'
+      ;;
+  esac
+}
+
+delete_branch_if_safe() {
+  local repo_path="$1"
+  local branch="$2"
+
+  [ -n "$branch" ] || return 0
+
+  if ! git -C "$repo_path" branch --list "$branch" | grep -q .; then
+    echo "  branch already deleted: $branch"
+    return 0
+  fi
+
+  if git -C "$repo_path" branch -d "$branch" >/dev/null 2>&1; then
+    echo "  deleted branch: $branch"
+  else
+    echo "  kept branch: $branch (not safely deletable)"
+  fi
+}
+
+remove_worktree() {
+  local repo_path="$1"
+  local worktree_path="$2"
+  local branch="$3"
+  local force="$4"
+  local rel
+
+  rel="$(display_path "$worktree_path")"
+
+  if [ "$force" -eq 1 ]; then
+    git -C "$repo_path" worktree remove --force "$worktree_path"
+  else
+    git -C "$repo_path" worktree remove "$worktree_path"
+  fi
+
+  git -C "$repo_path" worktree prune
+  echo "removed: $rel"
+  delete_branch_if_safe "$repo_path" "$branch"
+}
+
+APPLY=0
+FORCE_DIRTY=0
+INCLUDE_NON_TASK=0
+REPO_FILTER=""
+ENG_ID_FILTER=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --apply)
+      APPLY=1
+      shift
+      ;;
+    --repo)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: --repo requires a value" >&2
+        exit 2
+      fi
+      REPO_FILTER="$2"
+      shift 2
+      ;;
+    --eng-id)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: --eng-id requires a value" >&2
+        exit 2
+      fi
+      ENG_ID_FILTER="$2"
+      shift 2
+      ;;
+    --force-dirty)
+      FORCE_DIRTY=1
+      shift
+      ;;
+    --include-non-task)
+      INCLUDE_NON_TASK=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [ ! -d "$ROOT/worktrees" ]; then
+  echo "No worktrees directory found."
+  exit 0
+fi
+
+found=0
+removed=0
+skipped=0
+
+while IFS= read -r git_file; do
+  worktree_path="$(dirname "$git_file")"
+  repo="$(basename "$(dirname "$worktree_path")")"
+  name="$(basename "$worktree_path")"
+  repo_path="$ROOT/repos/$repo"
+  rel="$(display_path "$worktree_path")"
+
+  if [ -n "$REPO_FILTER" ] && [ "$repo" != "$REPO_FILTER" ]; then
+    continue
+  fi
+
+  if [ "$INCLUDE_NON_TASK" -eq 0 ] && ! is_task_worktree_name "$name"; then
+    continue
+  fi
+
+  if [ -n "$ENG_ID_FILTER" ] && [ "$(worktree_eng_id "$name")" != "$ENG_ID_FILTER" ]; then
+    continue
+  fi
+
+  found=$((found + 1))
+
+  if [ ! -e "$repo_path/.git" ]; then
+    echo "skip: $rel (base repo not initialized)"
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
+  status="$(git -C "$worktree_path" status --short 2>/dev/null || true)"
+
+  if [ -n "$status" ]; then
+    echo "dirty: $rel"
+    printf '%s\n' "$status" | sed 's/^/  /'
+
+    if [ "$APPLY" -eq 0 ]; then
+      echo "  preview only; pass --apply to clean."
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    if [ "$FORCE_DIRTY" -eq 1 ]; then
+      remove_worktree "$repo_path" "$worktree_path" "$branch" 1
+      removed=$((removed + 1))
+      continue
+    fi
+
+    if [ -t 0 ]; then
+      printf 'Force remove dirty worktree %s? [y/N] ' "$rel" >&2
+      if ! read -r answer; then
+        answer=""
+      fi
+      if is_yes "$answer"; then
+        remove_worktree "$repo_path" "$worktree_path" "$branch" 1
+        removed=$((removed + 1))
+      else
+        echo "skipped: $rel"
+        skipped=$((skipped + 1))
+      fi
+    else
+      echo "  skipped dirty worktree in non-interactive shell; rerun interactively or pass --force-dirty."
+      skipped=$((skipped + 1))
+    fi
+
+    continue
+  fi
+
+  if [ "$APPLY" -eq 0 ]; then
+    if [ -n "$branch" ]; then
+      echo "clean: $rel ($branch)"
+    else
+      echo "clean: $rel"
+    fi
+    continue
+  fi
+
+  remove_worktree "$repo_path" "$worktree_path" "$branch" 0
+  removed=$((removed + 1))
+done < <(find "$ROOT/worktrees" -mindepth 3 -maxdepth 3 -name .git -type f 2>/dev/null | sort)
+
+if [ "$found" -eq 0 ]; then
+  echo "No matching worktrees found."
+fi
+
+echo "Summary: found=$found removed=$removed skipped=$skipped"

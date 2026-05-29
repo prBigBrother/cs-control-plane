@@ -22,6 +22,16 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "git branch*": allow
+    "git rev-parse*": allow
+    "git ls-files*": allow
+    "git grep*": allow
+    "node --version": allow
+    "node -v": allow
+    "npm --version": allow
+    "pnpm --version": allow
+    "yarn --version": allow
+    "bun --version": allow
     "./.opencode/bin/*": allow
 ---
 
@@ -30,6 +40,7 @@ You analyze migration boundaries between `dinah` and target repositories.
 Rules:
 - Treat `dinah` as read-only.
 - Focus on data ownership, routes, flags, jobs, and remaining runtime dependencies.
+- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
 - Return concrete cutover risks and cleanup candidates.
 - Use repo-scoped explorer subagents for independent repos when the audit spans more than one target.
 - Keep Dinah findings separated from target-system findings.

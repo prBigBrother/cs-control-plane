@@ -8,6 +8,7 @@ This document explains the current shared agents in the control plane and when t
 - Use the control plane only for shared orchestration, release helpers, and cross-repo coordination.
 - One editable repo gets one owner at a time.
 - When a prompt names an `ENG-<id>` task without issue details, resolve the Linear issue before repo investigation or implementation.
+- Before implementation or validation, create or repair target worktrees with `/task-start`; use `/task-start --force-install` when validation reports missing modules or wrong platform binaries.
 - Format URLs in agent output as Markdown links so they are clickable, except inside raw logs or code blocks.
 
 ## Agent List
@@ -24,11 +25,29 @@ OpenCode uses the lowercase file name as the agent id. In the UI, treat these as
 
 The Manager is the primary coordinator. Other shared agents are subagents with scoped permissions and step limits.
 
+Step budgets:
+- Manager: 16
+- Explorer: 12
+- Implementer: 30
+- Validator: 10
+
 Agent files live in packs:
 - `.opencode/agent-packs/control-plane/` contains Manager, Auditor, and Release.
 - `.opencode/agent-packs/repo/` contains Explorer, Implementer, and Validator.
 - `.opencode/agent-packs/common/` contains shared Linear and Datadog specialists.
 - `.opencode/agents/` is the active OpenCode set.
+
+Default agent behavior:
+- control-plane profiles default to `manager`
+- repo/worktree profiles default to `explorer`
+- built-in `build` is disabled in shared profiles
+
+Automatic command permissions:
+- read-only git diagnostics are allowed, including `status`, `diff`, `log`, `show`, `branch`, `rev-parse`, `ls-files`, and `grep`
+- package-manager version and package inspection commands are allowed where useful
+- repo Implementer and Validator may run package scripts such as `npm run *`, `pnpm run *`, `yarn run *`, and `bun run *`
+- destructive git/package commands still require approval; do not add broad `git *`, `npm *`, `pnpm *`, `yarn *`, or `bun *` permissions
+- agents should avoid `&&`, `;`, and pipes for simple diagnostics because separate commands preserve automatic permission matching
 
 `bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
 - `repo` shows common agents plus Explorer, Implementer, and Validator.
@@ -53,11 +72,9 @@ Do not use it for:
 - deep repo-local investigation when only one repo is involved
 
 Typical output:
-- Linear task summary
-- repo-by-repo work split
-- worktree targets
-- ownership boundaries
-- dependency order
+- `Completion Gate:` with Linear, worktree readiness, Graphify, implementation, validation, diff review, blockers, and next action
+- compact repo-by-repo status
+- dependency order when relevant
 
 Agent id:
 - `manager`
@@ -246,6 +263,7 @@ Agent id:
 - `/session-brief` gives repo-scoped agents compact state before handoff
 - `/workspace-status` checks shared workspace health before or after orchestration
 - `/task-close` is for cleanup after repo-local work is finished
+- `/task-cleanup` is for previewing or bulk-cleaning stale task worktrees
 
 ## What Not To Do
 

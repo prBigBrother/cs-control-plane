@@ -18,6 +18,7 @@ Run these from the control-plane repo root because they create, remove, coordina
 - `/task-start`
 - `/task-map`
 - `/task-close`
+- `/task-cleanup`
 - `/cross-impl`
 - `/migration-audit`
 - `/compare`
@@ -62,6 +63,7 @@ Purpose:
 - create one or more repo worktrees for an engineering task
 - apply the standard branch and worktree naming rules
 - install shared OpenCode config into each new worktree
+- prepare worktree dependencies from matching base installs or `npm ci`
 
 Use it when:
 - you are starting work in one or more editable repos
@@ -72,20 +74,23 @@ Backed by:
 - `./.opencode/bin/new-task`
 
 Usage:
-- `/task-start <repo...> <eng-id> [slug] [type]`
+- `/task-start [--no-install] [--force-install] <repo...> <eng-id> [slug] [type]`
 
 Typical output:
 - created worktree paths
+- dependency link/install status
 - read-only skip notice for non-editable repos such as `dinah`
 - no agent transcript
 
 Important behavior:
-- rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and `node_modules` links when source assets exist in the base checkout
+- rerunning `/task-start` for an existing worktree repairs shared OpenCode config, env-file links, and dependency state
 - slug is optional; when omitted, an existing matching worktree is reused if there is exactly one match, otherwise new worktrees use the fallback slug `task`
-- new worktrees are created from `origin/main` without checking out or pulling the base repo under `repos/*`
+- new worktrees are created from the latest fetched `origin/main` without checking out or pulling the base repo under `repos/*`
+- lockfile repos use real worktree `node_modules`, not base-checkout symlinks
+- when a lockfile worktree has missing or linked dependencies, the helper runs `npm ci` inside the worktree unless `--no-install` is passed
+- `--force-install` runs `npm ci` even when a local worktree `node_modules` directory already exists
 - worktrees receive the repo agent set: Explorer, Implementer, and Validator
 - Daedalus worktrees run `npm run db:generate` after setup when Prisma is available
-- if the base checkout has no `node_modules`, run `./.opencode/bin/bootstrap` before creating or repairing worktrees
 
 ### `/task-map`
 
@@ -141,6 +146,48 @@ Typical output:
 Important behavior:
 - slug is optional only when exactly one worktree exists for the repo and ENG id
 - branch deletion uses the actual worktree branch when the worktree still exists, so cleanup works for `feature`, `bug`, `hotfix`, and `release` branches without requiring the type
+
+### `/task-cleanup`
+
+Session:
+- control-plane only
+
+Purpose:
+- bulk preview or remove task worktrees
+- ask before force-removing dirty worktrees
+- prune git worktree state and delete local branches when safe
+
+Use it when:
+- multiple task worktrees are stale and should be cleaned up together
+- you want to narrow cleanup by repo or ENG id
+- you want a preview before deleting anything
+
+Backed by:
+- `./.opencode/bin/cleanup-worktrees`
+
+Usage:
+- `/task-cleanup`
+- `/task-cleanup --apply`
+- `/task-cleanup --repo icarus --apply`
+- `/task-cleanup --eng-id ENG-123 --apply`
+- `/task-cleanup --apply --force-dirty`
+
+Typical output:
+- matching clean and dirty worktrees
+- dirty file summaries
+- removed worktree paths
+- safe branch deletion status
+- summary counts
+
+Important behavior:
+- default mode is preview only
+- by default, only task worktrees named `ENG-<id>-<slug>` are included
+- clean worktrees are removed only when `--apply` is passed
+- dirty worktrees are skipped in non-interactive shells unless `--force-dirty` is passed
+- dirty worktrees prompt for force cleanup in interactive shells
+- when a non-interactive run skips dirty worktrees, ask the user before rerunning with `--force-dirty`
+- local branches are deleted with safe `git branch -d`; unmerged branches are kept
+- pass `--include-non-task` only when release or other non-task worktrees should be considered
 
 ### `/compare`
 
@@ -553,7 +600,8 @@ Typical output:
 
 1. In either session, use `/pr-comments` to gather review context if follow-up changes are needed.
 2. In the repo worktree session, finish validation and make sure task state is durable.
-3. In the control-plane session, use `/task-close` when the task worktree is ready to be removed.
+3. In the control-plane session, use `/task-close` when one task worktree is ready to be removed.
+4. Use `/task-cleanup` without `--apply` first when multiple stale task worktrees should be cleaned together.
 
 ## Command Wiring Status
 
@@ -568,6 +616,7 @@ Script-backed commands:
 - `/release-prepare` → `./.opencode/bin/release-prepare`
 - `/session-brief` → `./.opencode/bin/session-brief`
 - `/task-close` → `./.opencode/bin/cleanup-task`
+- `/task-cleanup` → `./.opencode/bin/cleanup-worktrees`
 - `/task-map` → `./.opencode/bin/worktree-map`
 - `/task-start` → `./.opencode/bin/new-task`
 - `/workspace-status` → `./.opencode/bin/workspace-doctor`

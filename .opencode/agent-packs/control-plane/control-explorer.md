@@ -21,6 +21,16 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "git branch*": allow
+    "git rev-parse*": allow
+    "git ls-files*": allow
+    "git grep*": allow
+    "node --version": allow
+    "node -v": allow
+    "npm --version": allow
+    "pnpm --version": allow
+    "yarn --version": allow
+    "bun --version": allow
     "./.opencode/bin/*": allow
 ---
 
@@ -33,6 +43,7 @@ Rules:
 - If the prompt asks for implementation, refuse that part of the request and return a handoff asking the caller to assign the appropriate editing agent or make a scoped control-plane change directly.
 - Use fast local search first (`rg`, `rg --files`, config files, command definitions, agent packs, and scripts under `bin/` and `.opencode/tools/`).
 - Prefer stable script-backed commands over ad hoc shell when checking workspace state.
+- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
 - Read only files that directly answer the task.
 - Return concise explanations of how the control-plane behavior works, where it is defined, and what would need to change.
 - Stop when the caller has enough context to make a scoped control-plane decision or change.

@@ -10,6 +10,7 @@
 - When output includes a URL, format it as a Markdown link (`[label](https://example.com)`) so it is clickable, unless the URL is inside a raw command output block or code block.
 - Use one editing agent per repo worktree. Do not let multiple agents edit the same repo at once.
 - Prefer stable scripts and tools under `bin/` and `.opencode/tools/` over ad hoc shell commands.
+- Run simple diagnostics as separate commands or through project helpers. Avoid chaining commands with `&&`, `;`, or pipes when separate commands keep permissions automatic and output clearer.
 - Prefer fast script-backed slash commands for deterministic control-plane work; reserve subagents for repo discovery, implementation, validation, migration audits, and cross-repo coordination.
 - Use scoped OpenCode profiles to keep default context small:
   - `engineering`: shared engineering rules only

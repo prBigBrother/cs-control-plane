@@ -10,7 +10,12 @@ This guide describes the standard engineering cycle from task intake through rel
 - Use subagents when work can run independently by repo or phase.
 - Use script-backed commands directly when the task is deterministic.
 - Control-plane sessions show the full shared agent set so Manager can delegate repo-scoped discovery, implementation, and validation.
+- Control-plane sessions default to Manager.
 - Repo worktree sessions show Explorer, Implementer, and Validator.
+- Repo worktree sessions default to Explorer.
+- The built-in Build agent is disabled in shared profiles.
+- Manager final output starts with `Completion Gate:` so incomplete validation, diff review, or setup repair is explicit.
+- Agents should run simple diagnostics as separate commands or through helpers instead of chaining with `&&`, `;`, or pipes. This keeps read-only git/package checks inside the automatic permission allowlist.
 
 ## 1. Intake And Scope
 
@@ -52,13 +57,13 @@ Use:
 - no agent
 
 Commands:
-- `/task-start <repo...> <eng-id> [slug] [type]`
+- `/task-start [--no-install] [--force-install] <repo...> <eng-id> [slug] [type]`
 - `/workspace-status` after setup if submodule or runtime link state looks wrong
 
 Equivalent script:
 
 ```bash
-./bin/new-task <repo> <eng-id> [slug] [type]
+./.opencode/bin/new-task [--no-install] [--force-install] <repo> <eng-id> [slug] [type]
 ```
 
 Output:
@@ -66,12 +71,16 @@ Output:
 - shared OpenCode config installed
 - repo agent pack installed for Tab switching
 - repo-local `AGENTS.md` copied when present
+- env files linked from the base checkout when available
+- lockfile dependencies installed into real worktree `node_modules`
 
 Rules:
 - Create worktrees from base checkouts under `repos/*`.
-- Create task worktrees from `origin/main` without moving the base submodule checkout.
+- Create task worktrees from the latest fetched `origin/main` without moving the base submodule checkout.
 - Keep base submodule checkouts clean.
 - Open a separate OpenCode session in each repo worktree that will be edited.
+- Use `--no-install` only when you intentionally want to skip dependency installation.
+- If validation reports missing modules or wrong platform binaries, rerun `/task-start --force-install` before assigning more implementation work.
 
 ## 3. Investigation
 
@@ -316,12 +325,15 @@ Use:
 
 Commands:
 - `/task-close <repo> <eng-id> [slug]`
+- `/task-cleanup [--apply] [--repo <repo>] [--eng-id <ENG-id>]`
 - `/workspace-status` after cleanup when you want to confirm no worktree or submodule drift remains
 
 Rules:
 - Close worktrees only after PRs are merged or the branch is no longer needed.
 - Persist any durable notes before cleanup.
 - Keep `repos/*` base checkouts clean.
+- Use `/task-cleanup` without `--apply` first for bulk cleanup previews.
+- Dirty worktrees must be inspected or explicitly force-cleaned when prompted.
 
 ## Quick Flow
 
@@ -336,4 +348,4 @@ Rules:
 9. GitHub/repo workflow: merge.
 10. Control plane: `/compare`.
 11. Control plane: `/release-prepare`.
-12. Control plane: `/task-close`.
+12. Control plane: `/task-close`, or `/task-cleanup` for stale bulk cleanup.

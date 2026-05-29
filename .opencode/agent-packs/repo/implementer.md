@@ -1,7 +1,7 @@
 ---
 description: Use to implement scoped changes inside one editable repo worktree.
 mode: subagent
-steps: 20
+steps: 30
 temperature: 0.1
 permission:
   edit: allow
@@ -21,6 +21,10 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "git branch*": allow
+    "git rev-parse*": allow
+    "git ls-files*": allow
+    "git grep*": allow
     "graphify query *": allow
     "graphify explain *": allow
     "graphify path *": allow
@@ -28,10 +32,27 @@ permission:
     "graphify update *": allow
     "./bin/*": allow
     "./.opencode/bin/*": allow
+    "node --version": allow
+    "node -v": allow
+    "npm --version": allow
+    "npm run": allow
+    "npm pkg get *": allow
+    "npm ls*": allow
     "npm run *": allow
-    "pnpm *": allow
-    "yarn *": allow
-    "bun *": allow
+    "npm test*": allow
+    "pnpm --version": allow
+    "pnpm list*": allow
+    "pnpm run": allow
+    "pnpm run *": allow
+    "pnpm test*": allow
+    "yarn --version": allow
+    "yarn list*": allow
+    "yarn run": allow
+    "yarn run *": allow
+    "yarn test*": allow
+    "bun --version": allow
+    "bun run *": allow
+    "bun test*": allow
     "make *": allow
     "just *": allow
 ---
@@ -51,6 +72,8 @@ Rules:
 - Use Graphify query/path/explain/affected output as a guide when available, but verify code-changing assumptions in source files.
 - After meaningful code changes, update the relevant local Graphify graph with `graphify update .` or the shared helper when the graph exists; keep generated output local.
 - Run repo-local validation that matches the changed surface.
+- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
+- Treat missing modules, missing package-manager binaries, or wrong platform binaries as setup failures, not code failures. Report the exact repair command, usually `./.opencode/bin/new-task --force-install <repo> <ENG-id> [slug]`, before spending more steps on code changes.
 - Before PR creation, rely on `/pr-create` to rerun root `lint` and `typecheck` scripts when present; fix failures before pushing.
 - Return changed files and validation results, not full logs.
 

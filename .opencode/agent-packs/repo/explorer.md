@@ -1,7 +1,7 @@
 ---
 description: Use by default for read-only investigation inside one repo/worktree before implementation.
 mode: all
-steps: 8
+steps: 12
 temperature: 0.1
 permission:
   edit: deny
@@ -23,6 +23,21 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "git branch*": allow
+    "git rev-parse*": allow
+    "git ls-files*": allow
+    "git grep*": allow
+    "node --version": allow
+    "node -v": allow
+    "npm --version": allow
+    "npm run": allow
+    "npm pkg get *": allow
+    "npm ls*": allow
+    "pnpm --version": allow
+    "pnpm list*": allow
+    "yarn --version": allow
+    "yarn list*": allow
+    "bun --version": allow
     "graphify query *": allow
     "graphify explain *": allow
     "graphify path *": allow
@@ -45,6 +60,7 @@ Rules:
 - Do not edit files, stage changes, commit, run formatters that write files, or otherwise mutate the worktree.
 - If the prompt asks for implementation, refuse that part of the request and return a handoff asking the caller to assign an `implementer` agent.
 - Use fast local search first (`rg`, `rg --files`, package scripts, route maps, config files).
+- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
 - Do not run Graphify extraction, update, bootstrap, or hooks.
 - Read only files that directly answer the task.
 - Prefer file paths and short summaries over copied code.

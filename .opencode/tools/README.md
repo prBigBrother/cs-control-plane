@@ -7,6 +7,7 @@ Current deterministic helpers live in `bin/`, and OpenCode sessions call them th
 - `./.opencode/bin/worktree-map` via `/task-map`
 - `./.opencode/bin/new-task` via `/task-start`
 - `./.opencode/bin/cleanup-task` via `/task-close`
+- `./.opencode/bin/cleanup-worktrees` via `/task-cleanup`
 - `./.opencode/bin/compare` via `/compare`
 - `./.opencode/bin/compare-curl` via `/compare-curl`
 - `./.opencode/bin/knowledge-bootstrap` via `/knowledge-bootstrap`

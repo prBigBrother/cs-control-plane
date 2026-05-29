@@ -37,16 +37,6 @@ link_relative() {
   ln -sfn "$relative_target" "$link_path"
 }
 
-case "$PROFILE" in
-  engineering) CONFIG="$ROOT/opencode.json" ;;
-  migration) CONFIG="$ROOT/opencode.migration.json" ;;
-  *)
-    echo "Unknown OpenCode profile: $PROFILE" >&2
-    echo "Expected one of: engineering, migration" >&2
-    exit 4
-    ;;
-esac
-
 case "$TARGET_INPUT" in
   /*) TARGET="$TARGET_INPUT" ;;
   *) TARGET="$ROOT/$TARGET_INPUT" ;;
@@ -73,6 +63,18 @@ case "$AGENT_PROFILE" in
     echo "Unknown OpenCode agent profile: $AGENT_PROFILE" >&2
     echo "Expected one of: repo, control-plane, full" >&2
     exit 5
+    ;;
+esac
+
+case "$PROFILE:$AGENT_PROFILE" in
+  engineering:repo) CONFIG="$ROOT/opencode.repo.json" ;;
+  engineering:control-plane|engineering:full) CONFIG="$ROOT/opencode.json" ;;
+  migration:repo) CONFIG="$ROOT/opencode.migration.repo.json" ;;
+  migration:control-plane|migration:full) CONFIG="$ROOT/opencode.migration.json" ;;
+  *)
+    echo "Unknown OpenCode profile: $PROFILE" >&2
+    echo "Expected one of: engineering, migration" >&2
+    exit 4
     ;;
 esac
 

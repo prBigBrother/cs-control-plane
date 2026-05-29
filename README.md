@@ -48,24 +48,26 @@ Initialize submodules:
 Create worktrees:
 
 ```bash
-./bin/new-task icarus ENG-123 checkout-redesign feature
-./bin/new-task daedalus ENG-123 checkout-redesign feature
-./bin/new-task odin ENG-124
+./.opencode/bin/new-task icarus ENG-123 checkout-redesign feature
+./.opencode/bin/new-task daedalus ENG-123 checkout-redesign feature
+./.opencode/bin/new-task odin ENG-124
 ```
 
-`bin/new-task` also links local runtime assets from the base repo into the new worktree when they exist:
-- repo-root `node_modules`
-- `packages/**/node_modules`
+`bin/new-task` fetches the latest `origin/main` and creates new worktrees from that remote ref without checking out or pulling the base submodule worktree. This keeps `repos/*` from drifting just because a task was started.
+
+`bin/new-task` also prepares local runtime assets from the base repo into the new worktree:
+- real repo-root `node_modules` for repos with `package-lock.json`
+- real package-local `node_modules` for packages with their own lockfile
 - repo-root `.env*` files such as `.env` and `.env.local`
 - `packages/**/.env*` files such as `.env` and `.env.local`
 
-Rerunning `bin/new-task` for an existing worktree repairs these links and reinstalls the shared OpenCode config.
+When a worktree has a lockfile and `node_modules` is missing or linked from the base checkout, `bin/new-task` runs `npm ci` inside the worktree. Pass `--no-install` to skip installs, or `--force-install` to reinstall even when local dependencies already exist.
+
+Rerunning `bin/new-task` for an existing worktree repairs runtime links, verifies dependency freshness, and reinstalls the shared OpenCode config.
 
 For Daedalus worktrees, `bin/new-task` also runs `npm run db:generate` after setup when Prisma is available, so the generated Prisma clients are current before implementation starts.
 
 The slug is optional for task helpers. When omitted, existing worktrees are resolved by `ENG-<id>` if there is exactly one match.
-
-`bin/new-task` fetches `origin/main` and creates new worktrees from that remote ref without checking out or pulling the base submodule worktree. This keeps `repos/*` from drifting just because a task was started.
 
 Tracked env files already present in the worktree are left as-is; untracked local env files are symlinked from the base repo checkout.
 
@@ -93,6 +95,8 @@ Attach shared OpenCode config to a base repo or worktree:
 
 The default profile is `engineering`, which loads shared engineering instructions. The only optional profile is:
 - `migration`: engineering plus migration rules
+
+Control-plane installs default to Manager. Repo and worktree installs default to Explorer so repo-local sessions start in read-only investigation mode. The built-in Build agent is disabled in all shared profiles.
 
 Linear and Datadog MCP servers are configured for per-agent use. Their tools are hidden globally and exposed through `linear-operator` and `datadog-investigator`. Authenticate once when needed:
 
@@ -139,6 +143,15 @@ Map worktrees:
 ```bash
 ./bin/worktree-map icarus ENG-123 checkout-redesign
 ```
+
+Preview and bulk clean stale task worktrees:
+
+```bash
+./.opencode/bin/cleanup-worktrees
+./.opencode/bin/cleanup-worktrees --repo icarus --apply
+```
+
+The bulk cleanup helper previews by default, removes clean matching task worktrees only with `--apply`, and prompts before force-removing dirty worktrees in an interactive shell.
 
 Create a compact handoff brief for agents:
 

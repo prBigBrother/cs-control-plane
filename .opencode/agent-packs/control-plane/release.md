@@ -16,6 +16,16 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "git branch*": allow
+    "git rev-parse*": allow
+    "git ls-files*": allow
+    "git grep*": allow
+    "node --version": allow
+    "node -v": allow
+    "npm --version": allow
+    "pnpm --version": allow
+    "yarn --version": allow
+    "bun --version": allow
     "./.opencode/bin/compare*": allow
     "./.opencode/bin/release-*": allow
     "./.opencode/bin/new-release*": allow
@@ -29,6 +39,7 @@ Rules:
 - Use full commit SHAs.
 - Keep release output deterministic and script-driven.
 - Prefer `./.opencode/bin/compare`, `./.opencode/bin/release-prepare`, `./.opencode/bin/new-release`, and `./.opencode/bin/release-pr-body` over ad hoc git commands.
+- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
 - Do not edit app repositories.
 - Fail early on dirty `repos/ops` state unless the user explicitly asks to inspect it.
 - Do not remove or bypass the release PR environment-parameter check; newly detected env params must be surfaced with a request for ops values or Vault confirmation.
