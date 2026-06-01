@@ -267,13 +267,24 @@ for file in \
   for pattern in \
     '    "git status*": allow' \
     '    "git diff*": allow' \
+    '    "git diff *": allow' \
     '    "git log*": allow' \
     '    "git show*": allow' \
     '    "git branch*": allow' \
     '    "git rev-parse*": allow' \
-    '    "git ls-files*": allow'; do
+    '    "git ls-files*": allow' \
+    '    "npm run lint *": allow' \
+    '    "npm run typecheck *": allow' \
+    '    "python3 *": allow' \
+    '    "gh *": allow' \
+    '    "tap-spec *": allow' \
+    '    "ts-node *": allow' \
+    '    "grep *": allow' \
+    '    "rg *": allow' \
+    '    "echo *": allow' \
+    '    "awk *": allow'; do
     if ! grep -qF "$pattern" "$file"; then
-      fail "$rel should allow read-only git diagnostic: $pattern"
+      fail "$rel should allow requested diagnostic shell pattern: $pattern"
     fi
   done
 

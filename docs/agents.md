@@ -44,8 +44,11 @@ Default agent behavior:
 
 Automatic command permissions:
 - read-only git diagnostics are allowed, including `status`, `diff`, `log`, `show`, `branch`, `rev-parse`, `ls-files`, and `grep`
+- common shell inspection helpers are allowed, including `grep *`, `rg *`, `echo *`, and `awk *`
 - package-manager version and package inspection commands are allowed where useful
+- `npm run lint` and `npm run typecheck` are allowed for shared agents
 - repo Implementer and Validator may run package scripts such as `npm run *`, `pnpm run *`, `yarn run *`, and `bun run *`
+- `python3 *`, `gh *`, `tap-spec *`, `ts-node *`, `echo *`, and `awk *` are intentionally trusted commands by local policy; use them only for scoped project work
 - destructive git/package commands still require approval; do not add broad `git *`, `npm *`, `pnpm *`, `yarn *`, or `bun *` permissions
 - agents should avoid `&&`, `;`, and pipes for simple diagnostics because separate commands preserve automatic permission matching
 

@@ -13,12 +13,20 @@ permission:
     "pwd": allow
     "ls *": allow
     "find *": allow
+    "grep": allow
+    "grep *": allow
+    "rg": allow
     "rg *": allow
     "rg --files*": allow
+    "echo": allow
+    "echo *": allow
+    "awk": allow
+    "awk *": allow
     "sed *": allow
     "cat *": allow
     "git status*": allow
     "git diff*": allow
+    "git diff *": allow
     "git log*": allow
     "git show*": allow
     "git branch*": allow
@@ -28,9 +36,20 @@ permission:
     "node --version": allow
     "node -v": allow
     "npm --version": allow
+    "npm run lint": allow
+    "npm run lint *": allow
+    "npm run typecheck": allow
+    "npm run typecheck *": allow
     "pnpm --version": allow
     "yarn --version": allow
     "bun --version": allow
+    "python3 *": allow
+    "gh": allow
+    "gh *": allow
+    "tap-spec": allow
+    "tap-spec *": allow
+    "ts-node": allow
+    "ts-node *": allow
     "./.opencode/bin/*": allow
 ---
 
