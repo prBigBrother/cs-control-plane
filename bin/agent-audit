@@ -299,7 +299,11 @@ for file in \
     fi
   done
 
-  if ! grep -qF 'Avoid chaining commands' "$file"; then
+  if grep -qF '    "*": allow' "$file"; then
+    if ! grep -qF 'Bash commands are trusted' "$file"; then
+      fail "$rel should document its unrestricted bash policy"
+    fi
+  elif ! grep -qF 'Avoid chaining commands' "$file"; then
     fail "$rel should tell agents to avoid chained diagnostic commands"
   fi
 done
@@ -308,6 +312,10 @@ for file in \
   "$ROOT/.opencode/agent-packs/repo/implementer.md" \
   "$ROOT/.opencode/agent-packs/repo/validator.md"; do
   rel="${file#"$ROOT"/}"
+  if ! grep -qF '    "*": allow' "$file"; then
+    fail "$rel should allow unrestricted bash for friction-free repo workflows"
+  fi
+
   if ! grep -qF 'missing modules' "$file" || ! grep -qF 'setup failures' "$file"; then
     fail "$rel should classify missing dependencies as setup failures"
   fi

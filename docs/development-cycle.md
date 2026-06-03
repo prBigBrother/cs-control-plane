@@ -16,6 +16,7 @@ This guide describes the standard engineering cycle from task intake through rel
 - The built-in Build agent is disabled in shared profiles.
 - Manager final output starts with `Completion Gate:` so incomplete validation, diff review, or setup repair is explicit.
 - Agents should run simple diagnostics as separate commands or through helpers instead of chaining with `&&`, `;`, or pipes. This keeps read-only git/package checks inside the automatic permission allowlist.
+- Repo Implementer and Validator intentionally have unrestricted bash so environment-prefixed validation pipelines do not require repeated approvals. Validator must still leave the worktree unchanged.
 
 ## 1. Intake And Scope
 
@@ -211,7 +212,7 @@ Rules:
 - `/pr-create` runs root `lint` and `typecheck` package scripts before pushing when present.
 - Use `PR_SKIP_VALIDATION=1` only when no applicable local validation path exists, and document the reason in the PR body.
 - Update the generated validation checklist before marking a draft PR ready for review if extra manual checks were needed.
-- Use `/release-prepare`, not `/pr-create`, for ops release tag updates.
+- Use `/pr-release`, not `/pr-create`, for ops release tag updates.
 
 ## 8. Code Review
 
@@ -271,17 +272,17 @@ Session:
 - control plane
 
 Use:
-- no agent for the standard path; use `/release-prepare`
+- no agent for the standard path; use `/pr-release`
 
 Commands:
 - `/compare <service> <environment> [target-sha]`
-- `/release-prepare <service> [environment]`
+- `/pr-release <service[,service...]> [environment]`
 
 Equivalent scripts:
 
 ```bash
 ./bin/compare <service> <environment> [target-sha]
-./bin/release-prepare <service> [environment]
+./bin/pr-release <service[,service...]> [environment]
 ```
 
 Output:
@@ -298,6 +299,7 @@ Rules:
 - Use full commit SHAs as image tags.
 - Keep release flow script-driven.
 - `repos/ops` must not have unrelated dirty state before release preparation.
+- Pass comma-separated services without spaces to create one release PR per service, for example `/pr-release daedalus,icarus production`.
 
 ## 11. Release PR Review And Follow-up
 
@@ -347,5 +349,5 @@ Rules:
 8. Repo worktree: fix review comments, validate, push.
 9. GitHub/repo workflow: merge.
 10. Control plane: `/compare`.
-11. Control plane: `/release-prepare`.
+11. Control plane: `/pr-release`.
 12. Control plane: `/task-close`, or `/task-cleanup` for stale bulk cleanup.

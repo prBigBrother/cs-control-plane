@@ -47,10 +47,11 @@ Automatic command permissions:
 - common shell inspection helpers are allowed, including `grep *`, `rg *`, `echo *`, and `awk *`
 - package-manager version and package inspection commands are allowed where useful
 - `npm run lint` and `npm run typecheck` are allowed for shared agents
-- repo Implementer and Validator may run package scripts such as `npm run *`, `pnpm run *`, `yarn run *`, and `bun run *`
+- repo Implementer and Validator have unrestricted bash so environment-prefixed commands, pipelines, package scripts, and repo validation commands run without repeated approvals
+- Validator still has `edit: deny` and a behavioral no-mutation rule, but unrestricted bash can technically modify files
 - `python3 *`, `gh *`, `tap-spec *`, `ts-node *`, `echo *`, and `awk *` are intentionally trusted commands by local policy; use them only for scoped project work
-- destructive git/package commands still require approval; do not add broad `git *`, `npm *`, `pnpm *`, `yarn *`, or `bun *` permissions
-- agents should avoid `&&`, `;`, and pipes for simple diagnostics because separate commands preserve automatic permission matching
+- destructive git/package commands still require approval in restricted roles; Implementer and Validator are intentional unrestricted-bash exceptions
+- restricted roles should avoid `&&`, `;`, and pipes for simple diagnostics because separate commands preserve automatic permission matching
 
 `bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
 - `repo` shows common agents plus Explorer, Implementer, and Validator.
@@ -251,7 +252,7 @@ Agent id:
 ### Release task
 
 1. Use `./.opencode/bin/compare` to inspect deployed vs target SHA.
-2. Use `/release-prepare` to create the `ops` release worktree, commit the release, push the branch, and open the PR.
+2. Use `/pr-release` to create the `ops` release worktree, commit the release, push the branch, and open the PR. Pass comma-separated services without spaces when needed, for example `/pr-release daedalus,icarus production`.
 3. Review the created PR.
 
 ## Commands That Fit The Agents
@@ -260,7 +261,7 @@ Agent id:
 - `/task-map` helps `manager` and `explorer`
 - `/cross-impl` is the `manager` entry point
 - `/migration-audit` pairs with `auditor`
-- `/compare` and `/release-prepare` pair with `release`
+- `/compare` and `/pr-release` pair with `release`
 - `/pr-comments` is useful when reviewing or addressing PR feedback
 - `/pr-review` performs a formal qualified PR review with severity-based approval or change request
 - `/session-brief` gives repo-scoped agents compact state before handoff

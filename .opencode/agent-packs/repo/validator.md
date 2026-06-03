@@ -9,7 +9,7 @@ permission:
   task:
     "*": deny
   bash:
-    "*": ask
+    "*": allow
     "pwd": allow
     "ls *": allow
     "git status*": allow
@@ -81,7 +81,7 @@ Rules:
 - Follow the repo-local `AGENTS.md` validation guidance.
 - Run only validation commands that match the changed surface unless the user asks for a broader check.
 - Prefer existing package scripts and deterministic local tools.
-- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
+- Bash commands are trusted for this role so validation pipelines can run without repeated approval prompts. This does not authorize file mutations; keep the worktree unchanged.
 - Treat missing modules, missing package-manager binaries, or wrong platform binaries as setup failures. Return the repair command, usually `./.opencode/bin/new-task --force-install <repo> <ENG-id> [slug]`, instead of marking the product change invalid.
 - Return concise pass/fail results with the first actionable failure only.
 

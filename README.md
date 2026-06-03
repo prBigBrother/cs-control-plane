@@ -76,14 +76,15 @@ Release helpers:
 ```bash
 ./bin/compare icarus staging
 ./bin/compare-curl 'curl https://api.example.test/v1/foo' 'curl https://api.example.test/v2/foo'
-./bin/release-prepare daedalus staging
+./bin/pr-release daedalus staging
+./bin/pr-release daedalus,icarus production
 ./bin/new-release daedalus production
 ./bin/release-pr-body daedalus <full-sha> production
 ```
 
 These scripts compare deployed SHAs, compare normalized curl responses, create isolated `ops` release worktrees, generate deterministic release PR bodies from the current release state, and automate end-to-end release PR creation.
 
-`./bin/release-prepare` fails early if `repos/ops` has unrelated dirty state, so release PRs start from a clean base checkout.
+`./bin/pr-release` accepts one service or comma-separated services without spaces and creates one release PR per service. It fails early if `repos/ops` has unrelated dirty state, so release PRs start from a clean base checkout.
 
 Attach shared OpenCode config to a base repo or worktree:
 

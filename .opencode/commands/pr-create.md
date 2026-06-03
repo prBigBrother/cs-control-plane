@@ -16,5 +16,5 @@ Before running:
 Rules:
 - Default to draft unless `ready` is explicit.
 - Let the script enforce branch, dirty-state, validation, push, title/body, and existing-PR checks.
-- Use `/release-prepare`, not `/pr-create`, for ops release tag updates.
+- Use `/pr-release`, not `/pr-create`, for ops release tag updates.
 - Return branch, repository, mode, title, PR URL, and validation result only.

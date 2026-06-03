@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: pr-release <service[,service...]> [environment]"
+  echo "  service      daedalus | icarus | odin | olympus"
+  echo "               separate multiple services with commas"
+  echo "  environment  staging | production | both (default)"
+  exit 1
+}
+
+[[ $# -lt 1 || $# -gt 2 ]] && usage
+
+SERVICE_INPUT=$1
+ENVIRONMENT_INPUT=${2:-both}
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# shellcheck source=../lib/release-common.sh
+source "$ROOT/lib/release-common.sh"
+
+TEMP_FILES=()
+release_cleanup_temp_files() {
+  if [ "${#TEMP_FILES[@]}" -gt 0 ]; then
+    rm -f "${TEMP_FILES[@]}"
+  fi
+}
+trap release_cleanup_temp_files EXIT
+
+release_require_clean_ops_checkout() {
+  local ops_path=$1
+  if [ -n "$(git -C "$ops_path" ls-files --others --exclude-standard)" ]; then
+    echo "Error: repos/ops has untracked files. Clean or stash it before running pr-release." >&2
+    exit 1
+  fi
+
+  if ! git -C "$ops_path" diff --ignore-cr-at-eol --quiet -- .; then
+    echo "Error: repos/ops is dirty. Clean or stash it before running pr-release." >&2
+    exit 1
+  fi
+
+  if ! git -C "$ops_path" diff --cached --ignore-cr-at-eol --quiet -- .; then
+    echo "Error: repos/ops has staged changes. Clean or stash it before running pr-release." >&2
+    exit 1
+  fi
+}
+
+release_require_gh_auth() {
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "Error: missing required command: gh" >&2
+    exit 1
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "Error: GitHub CLI is not authenticated" >&2
+    exit 1
+  fi
+}
+
+release_remote_branch_exists() {
+  local branch=$1
+  git -C "$(release_ops_path "$ROOT")" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+}
+
+release_open_pr_url_for_branch() {
+  local branch=$1
+  gh pr list --repo citizenshipper/ops --head "$branch" --state open --json url --jq '.[0].url // ""'
+}
+
+release_reset_remote_branch() {
+  local branch=$1
+  local open_pr_url
+
+  if ! release_remote_branch_exists "$branch"; then
+    return 0
+  fi
+
+  open_pr_url=$(release_open_pr_url_for_branch "$branch")
+  if [ -n "$open_pr_url" ]; then
+    EXISTING_PR_URL="$open_pr_url"
+    return 0
+  fi
+
+  git -C "$(release_ops_path "$ROOT")" push --quiet origin --delete "$branch"
+}
+
+release_worktree_value_file() {
+  local worktree_path=$1
+  local service=$2
+  local environment=$3
+  echo "$worktree_path/$(release_values_relpath "$service" "$environment")"
+}
+
+release_update_tag_file() {
+  local values_file=$1
+  local new_sha=$2
+  local temp_file
+
+  if [ ! -f "$values_file" ]; then
+    echo "Error: missing values file: $values_file" >&2
+    exit 1
+  fi
+
+  temp_file=$(mktemp)
+  awk -v sha="$new_sha" '
+    /^[[:space:]]+tag:[[:space:]]+/ {
+      sub(/tag:[[:space:]]+.*/, "tag: " sha)
+    }
+    { print }
+  ' "$values_file" >"$temp_file"
+  mv "$temp_file" "$values_file"
+}
+
+release_require_expected_staging() {
+  local worktree_path=$1
+  local expected_files=$2
+  local staged_files
+  staged_files=$(git -C "$worktree_path" diff --cached --name-only | sort)
+
+  if [ "$staged_files" != "$expected_files" ]; then
+    echo "Error: staged files do not match the intended release file set" >&2
+    echo "Expected:" >&2
+    printf '%s\n' "$expected_files" >&2
+    echo "Actual:" >&2
+    printf '%s\n' "$staged_files" >&2
+    exit 1
+  fi
+}
+
+release_require_changes_present() {
+  local worktree_path=$1
+  if git -C "$worktree_path" diff --cached --quiet; then
+    echo "Error: target SHA is already deployed for the requested environment" >&2
+    exit 1
+  fi
+}
+
+release_parse_new_release_output() {
+  local output=$1
+  RELEASE_WORKTREE_PATH=$(printf '%s\n' "$output" | awk -F': ' '/^Ready:/ {print $2}')
+  RELEASE_BRANCH=$(printf '%s\n' "$output" | awk -F': ' '/^Branch:/ {print $2}')
+
+  if [ -z "$RELEASE_WORKTREE_PATH" ] || [ -z "$RELEASE_BRANCH" ]; then
+    echo "Error: could not parse worktree information from ./bin/new-release output" >&2
+    exit 1
+  fi
+}
+
+release_prepare_service() {
+  local service=$1
+  local environment=$2
+  local target_sha
+  local target_subject
+  local commit_message
+  local staging_old_sha
+  local production_old_sha
+  local new_release_output
+  local expected_files
+  local body_file
+  local pr_title
+  local commit_sha
+  local pr_url
+  local relpath
+
+  release_require_initialized_repos "$ROOT" "$service"
+  release_require_clean_ops_checkout "$(release_ops_path "$ROOT")"
+  release_require_gh_auth
+  release_fetch_origin "$ROOT" "$service"
+
+  target_sha=$(release_resolve_target_sha "$ROOT" "$service")
+  target_subject=$(release_pr_title "$ROOT" "$service" "$target_sha")
+  commit_message=$(release_commit_message "$service" "$environment" "$target_subject")
+  staging_old_sha=$(release_read_deployed_sha "$ROOT" "$service" staging)
+  production_old_sha=$(release_read_deployed_sha "$ROOT" "$service" production)
+
+  if [ "$environment" = "staging" ] && [ "$staging_old_sha" = "$target_sha" ]; then
+    echo "Error: $service target SHA is already deployed to staging" >&2
+    exit 1
+  fi
+
+  if [ "$environment" = "production" ] && [ "$production_old_sha" = "$target_sha" ]; then
+    echo "Error: $service target SHA is already deployed to production" >&2
+    exit 1
+  fi
+
+  if [ "$environment" = "both" ] && [ "$staging_old_sha" = "$target_sha" ] && [ "$production_old_sha" = "$target_sha" ]; then
+    echo "Error: $service target SHA is already deployed to staging and production" >&2
+    exit 1
+  fi
+
+  new_release_output=$("$ROOT/bin/new-release" "$service" "$environment")
+  release_parse_new_release_output "$new_release_output"
+  EXISTING_PR_URL=""
+  release_reset_remote_branch "$RELEASE_BRANCH"
+
+  expected_files=$(release_changed_files "$service" "$environment" | sort)
+
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    release_update_tag_file "$RELEASE_WORKTREE_PATH/$relpath" "$target_sha"
+    git -C "$RELEASE_WORKTREE_PATH" add "$relpath"
+  done < <(printf '%s\n' "$expected_files")
+
+  release_require_expected_staging "$RELEASE_WORKTREE_PATH" "$expected_files"
+  release_require_changes_present "$RELEASE_WORKTREE_PATH"
+
+  body_file=$(mktemp)
+  TEMP_FILES+=("$body_file")
+  release_write_pr_body "$ROOT" "$service" "$target_sha" "$environment" "$body_file" "$staging_old_sha" "$production_old_sha"
+  pr_title=$(release_pr_title "$ROOT" "$service" "$target_sha")
+
+  git -C "$RELEASE_WORKTREE_PATH" commit -m "$commit_message" >/dev/null
+  commit_sha=$(git -C "$RELEASE_WORKTREE_PATH" rev-parse HEAD)
+  if [ -n "$EXISTING_PR_URL" ]; then
+    git -C "$RELEASE_WORKTREE_PATH" push --quiet --force-with-lease -u origin "$RELEASE_BRANCH"
+    pr_url="$EXISTING_PR_URL"
+    gh pr edit "$pr_url" --title "$pr_title" --body-file "$body_file" >/dev/null
+  else
+    git -C "$RELEASE_WORKTREE_PATH" push --quiet -u origin "$RELEASE_BRANCH"
+    pr_url=$(gh pr create --repo citizenshipper/ops --base main --head "$RELEASE_BRANCH" --title "$pr_title" --body-file "$body_file")
+  fi
+  rm -f "$body_file"
+
+  echo "## Release PR"
+  echo
+  echo "- Service: \`$service\`"
+  echo "- Environment: \`$environment\`"
+  echo "- Worktree: \`$RELEASE_WORKTREE_PATH\`"
+  echo "- Branch: \`$RELEASE_BRANCH\`"
+  echo "- Target SHA: \`$target_sha\`"
+  echo "- Commit SHA: \`$commit_sha\`"
+  echo "- PR: $pr_url"
+  echo
+  echo "## Changed Files"
+  echo
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    echo "- \`$relpath\`"
+  done < <(printf '%s\n' "$expected_files")
+}
+
+case "$SERVICE_INPUT" in
+  ""|,*|*,|*,,*) usage ;;
+esac
+
+ENVIRONMENT=$(release_normalize_environment "$ENVIRONMENT_INPUT")
+IFS=',' read -r -a SERVICES <<<"$SERVICE_INPUT"
+SEEN_SERVICES=","
+for SERVICE in "${SERVICES[@]}"; do
+  case "$SERVICE" in
+    *[[:space:]]*) release_usage_error "Services must be comma-separated without spaces: $SERVICE_INPUT" ;;
+  esac
+  release_require_service "$SERVICE"
+  case "$SEEN_SERVICES" in
+    *",$SERVICE,"*) release_usage_error "Duplicate service: $SERVICE" ;;
+  esac
+  SEEN_SERVICES="${SEEN_SERVICES}${SERVICE},"
+done
+
+FIRST_SERVICE=1
+for SERVICE in "${SERVICES[@]}"; do
+  if [ "$FIRST_SERVICE" -eq 0 ]; then
+    echo
+  fi
+  release_prepare_service "$SERVICE" "$ENVIRONMENT"
+  FIRST_SERVICE=0
+done

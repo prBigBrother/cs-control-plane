@@ -14,7 +14,7 @@ Current deterministic helpers live in `bin/`, and OpenCode sessions call them th
 - `./.opencode/bin/knowledge-query` via `/knowledge`
 - `./.opencode/bin/pr-comments` via `/pr-comments`
 - `./.opencode/bin/pr-review` via `/pr-review`
-- `./.opencode/bin/release-prepare` via `/release-prepare`
+- `./.opencode/bin/pr-release` via `/pr-release`
 - `./.opencode/bin/workspace-doctor` via `/workspace-status`
 
 Prefer these script-backed paths for repetitive work so agents do not spend tokens rediscovering basic repo state.

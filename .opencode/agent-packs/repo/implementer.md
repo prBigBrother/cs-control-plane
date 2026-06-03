@@ -9,7 +9,7 @@ permission:
   task:
     "*": deny
   bash:
-    "*": ask
+    "*": allow
     "pwd": allow
     "ls *": allow
     "find *": allow
@@ -91,7 +91,7 @@ Rules:
 - Use Graphify query/path/explain/affected output as a guide when available, but verify code-changing assumptions in source files.
 - After meaningful code changes, update the relevant local Graphify graph with `graphify update .` or the shared helper when the graph exists; keep generated output local.
 - Run repo-local validation that matches the changed surface.
-- Run read-only diagnostics as separate commands or through `.opencode/bin` helpers. Avoid chaining commands with `&&`, `;`, or pipes when simple separate commands will preserve automatic permissions.
+- Bash commands are trusted for this role so implementation and validation pipelines can run without repeated approval prompts. Keep commands scoped to the assigned worktree.
 - Treat missing modules, missing package-manager binaries, or wrong platform binaries as setup failures, not code failures. Report the exact repair command, usually `./.opencode/bin/new-task --force-install <repo> <ENG-id> [slug]`, before spending more steps on code changes.
 - Before PR creation, rely on `/pr-create` to rerun root `lint` and `typecheck` scripts when present; fix failures before pushing.
 - Return changed files and validation results, not full logs.

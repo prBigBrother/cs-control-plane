@@ -24,7 +24,7 @@ Run these from the control-plane repo root because they create, remove, coordina
 - `/compare`
 - `/compare-curl`
 - `/knowledge-bootstrap`
-- `/release-prepare`
+- `/pr-release`
 - `/workspace-status`
 
 ### Repo worktree session
@@ -353,7 +353,7 @@ Important behavior:
 - supports `PR_SKIP_VALIDATION=1` only for unusual repos without an applicable local validation path
 - refuses dirty worktrees
 - refuses to create a PR from `main`
-- use `/release-prepare`, not `/pr-create`, for ops release tag updates
+- use `/pr-release`, not `/pr-create`, for ops release tag updates
 
 ### `/session-brief`
 
@@ -540,13 +540,13 @@ Typical output:
 - rollout and cutoff risks
 - cleanup targets
 
-### `/release-prepare`
+### `/pr-release`
 
 Session:
 - control-plane only
 
 Purpose:
-- coordinate release preparation for a service through the `ops` repo
+- coordinate release preparation for one or more services through the `ops` repo
 - keep release work isolated from app implementation worktrees
 
 Use it when:
@@ -556,12 +556,14 @@ Use it when:
 
 Important behavior:
 - the flow fails early if `repos/ops` is dirty
+- comma-separated services create one release PR per service
 
 Backed by:
-- `./.opencode/bin/release-prepare`
+- `./.opencode/bin/pr-release`
 
 Usage:
-- `/release-prepare <service> [environment]`
+- `/pr-release <service[,service...]> [environment]`
+- `/pr-release daedalus,icarus production`
 
 Typical output:
 - release worktree path
@@ -593,8 +595,8 @@ Typical output:
 ### Release task
 
 1. In the control-plane session, use `/compare` to inspect deployed vs target SHA.
-2. In the control-plane session, use `/release-prepare` to create the isolated `ops` release worktree, commit the release, push the branch, and open the PR.
-3. Review the returned PR URL.
+2. In the control-plane session, use `/pr-release` to create isolated `ops` release worktrees, commit releases, push branches, and open PRs.
+3. Review the returned PR URL for each service.
 
 ### Cleanup
 
@@ -613,7 +615,7 @@ Script-backed commands:
 - `/pr-create` → `./.opencode/bin/pr-create`
 - `/pr-comments` → `./.opencode/bin/pr-comments`
 - `/pr-review` → `./.opencode/bin/pr-review`
-- `/release-prepare` → `./.opencode/bin/release-prepare`
+- `/pr-release` → `./.opencode/bin/pr-release`
 - `/session-brief` → `./.opencode/bin/session-brief`
 - `/task-close` → `./.opencode/bin/cleanup-task`
 - `/task-cleanup` → `./.opencode/bin/cleanup-worktrees`
@@ -637,5 +639,5 @@ Related helpers not currently exposed as slash commands:
 - Do not use an agent when a slash command only needs to run one deterministic script.
 - Do not edit application code directly in `repos/*`.
 - Do not perform release edits from app worktrees.
-- Do not run `/release-prepare` while `repos/ops` has unrelated dirty state.
+- Do not run `/pr-release` while `repos/ops` has unrelated dirty state.
 - Do not create editable worktrees for `dinah`.

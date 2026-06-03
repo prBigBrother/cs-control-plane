@@ -23,6 +23,7 @@ Allowed automatically:
 Still requires approval:
 - `git add`, `git commit`, `git push`, `git checkout`, `git reset`, `git clean`, `git pull`, `git merge`, and `git rebase`.
 - `npm install`, `npm add`, dependency mutation, and broad package-manager access such as `npm *`, `pnpm *`, `yarn *`, or `bun *`.
+- Exception: repo `implementer` and `validator` intentionally allow unrestricted bash as documented in `repo-agent-unrestricted-bash.md`.
 
 Risk note:
 - `python3 *` can execute arbitrary local Python code.
