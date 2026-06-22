@@ -1,5 +1,5 @@
 services:
-    - domain: opencode
+    - domain: opencode.test
       port: 9999
 log_mode: minimal # full | minimal | off
 cors: true # enable CORS headers on proxied responses

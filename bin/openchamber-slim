@@ -5,12 +5,13 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOST="${OPENCHAMBER_HOST:-127.0.0.1}"
 PORT="${OPENCHAMBER_PORT:-9999}"
-OPENCODE_BIND_HOST="${OPENCHAMBER_OPENCODE_HOSTNAME:-$HOST}"
+OPENCODE_BIND_HOST="${OPENCHAMBER_OPENCODE_HOSTNAME:-127.0.0.1}"
 OPENCODE_EXTERNAL_HOST="${OPENCODE_HOST:-}"
 OPENCODE_EXTERNAL_PORT="${OPENCODE_PORT:-}"
 OPENCODE_EXTERNAL_SKIP_START="${OPENCODE_SKIP_START:-}"
 DOMAIN="${SLIM_OPENCODE_DOMAIN:-opencode.test}"
 SLIM_CONFIG="${SLIM_CONFIG:-$ROOT/.slim.yaml}"
+SKIP_SLIM="${OPENCHAMBER_SKIP_SLIM:-}"
 
 usage() {
   echo "Usage: openchamber-slim <up|down|status>" >&2
@@ -27,14 +28,22 @@ require_command() {
 }
 
 openchamber_running_on_host_port() {
+  local http_code
   local status_output
 
   status_output="$(openchamber status 2>/dev/null || true)"
-  if printf '%s\n' "$status_output" | grep -Eq "port[[:space:]]+$PORT|:$PORT([^0-9]|$)|127\\.0\\.0\\.1:$PORT|localhost:$PORT|0\\.0\\.0\\.0:$PORT"; then
+  if printf '%s\n' "$status_output" | grep -Eq "port[[:space:]]+$PORT|:$PORT([^0-9]|$)|127\\.0\\.0\\.1:$PORT|localhost:$PORT|0\\.0\\.0\\.0:$PORT|[*]:$PORT"; then
     return 0
   fi
 
-  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -Eqi 'openchamb|openchamber'; then
+  if command -v curl >/dev/null 2>&1; then
+    http_code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT" 2>/dev/null || true)"
+    case "$http_code" in
+      2*|3*|401|403) return 0 ;;
+    esac
+  fi
+
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { found = 1 } END { exit found ? 0 : 1 }'; then
     return 0
   fi
 
@@ -51,6 +60,26 @@ slim_ready() {
   fi
 
   printf '%s\n' "$list_output" | awk -v domain="$DOMAIN" -v port="$PORT" '$1 == domain && $2 == port { found = 1 } END { exit found ? 0 : 1 }'
+}
+
+network_addresses() {
+  if command -v ifconfig >/dev/null 2>&1; then
+    ifconfig 2>/dev/null | awk '$1 == "inet" && $2 !~ /^127[.]/ { print $2 }' | sort -u
+  fi
+}
+
+print_access_urls() {
+  echo "Local access: http://localhost:$PORT"
+
+  if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+    local address
+    while IFS= read -r address; do
+      [ -n "$address" ] || continue
+      echo "Network access: http://$address:$PORT"
+    done < <(network_addresses)
+  else
+    echo "Bound access: http://$HOST:$PORT"
+  fi
 }
 
 up() {
@@ -92,6 +121,13 @@ up() {
     openchamber --host "$HOST" --port "$PORT" --ui-password "$OPENCHAMBER_PASSWORD"
   fi
 
+  print_access_urls
+
+  if [ -n "$SKIP_SLIM" ]; then
+    echo "Slim skipped because OPENCHAMBER_SKIP_SLIM is set"
+    return 0
+  fi
+
   if slim_ready; then
     echo "Slim already exposes $DOMAIN on port $PORT"
   else
@@ -102,10 +138,16 @@ up() {
 
 down() {
   require_command openchamber
-  require_command slim
 
   echo "Stopping OpenChamber"
   openchamber stop || true
+
+  if [ -n "$SKIP_SLIM" ]; then
+    echo "Slim skipped because OPENCHAMBER_SKIP_SLIM is set"
+    return 0
+  fi
+
+  require_command slim
 
   echo "Stopping Slim services from $SLIM_CONFIG"
   slim down --config "$SLIM_CONFIG" || true
@@ -113,18 +155,24 @@ down() {
 
 status() {
   require_command openchamber
-  require_command slim
 
   if openchamber_running_on_host_port; then
     echo "OpenChamber: running on $HOST:$PORT"
+    print_access_urls
   else
     echo "OpenChamber: not running on $HOST:$PORT"
   fi
 
-  if slim_ready; then
-    echo "Slim: $DOMAIN -> $PORT is running"
+  if [ -n "$SKIP_SLIM" ]; then
+    echo "Slim: skipped because OPENCHAMBER_SKIP_SLIM is set"
   else
-    echo "Slim: $DOMAIN -> $PORT is not ready"
+    require_command slim
+
+    if slim_ready; then
+      echo "Slim: $DOMAIN -> $PORT is running"
+    else
+      echo "Slim: $DOMAIN -> $PORT is not ready"
+    fi
   fi
 
   if [ -n "$OPENCODE_EXTERNAL_HOST" ]; then

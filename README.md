@@ -195,6 +195,18 @@ OPENCHAMBER_PASSWORD=... ./bin/openchamber-slim up
 
 `just up` loads root env config, starts OpenChamber on port `9999` when it is not already running there, then ensures Slim exposes `opencode.test` to port `9999` from `.slim.yaml`.
 
+For LAN access from another MacBook on the same network, keep OpenChamber bound to all interfaces and keep the managed OpenCode server bound to localhost:
+
+```bash
+export OPENCHAMBER_HOST=0.0.0.0
+export OPENCHAMBER_PORT=9999
+export OPENCHAMBER_OPENCODE_HOSTNAME=127.0.0.1
+```
+
+Then run `just up` and open the reported `Network access` URL from the second MacBook, for example `http://192.168.100.23:9999`. OpenCode itself should only be exposed directly with `opencode serve --hostname 0.0.0.0 --port 4096` when a remote `opencode attach` workflow is explicitly needed, and it must be protected with `OPENCODE_SERVER_PASSWORD`.
+
+Slim is only needed for the local hostname route. For direct LAN access by IP, set `OPENCHAMBER_SKIP_SLIM=1` to avoid macOS `sudo` prompts for packet filter rules.
+
 Validate control-plane scripts and command docs:
 
 ```bash
