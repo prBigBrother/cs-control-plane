@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCode Agent Engineer"
+  short_description: "Optimize OpenCode agents and MCPs"
+  default_prompt: "Use $opencode-agent-engineer to create or improve an OpenCode agent, MCP setup, or helper script with current docs and token-efficient design."

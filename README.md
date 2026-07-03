@@ -3,7 +3,7 @@
 This repository is the shared OpenCode control plane for the Citizenshipper multi-repo product.
 
 It owns:
-- shared OpenCode config, instructions, commands, and agents
+- shared OpenCode config, instructions, commands, agents, and skills
 - submodule references to the product repositories
 - worktree bootstrap and cleanup scripts
 - shared orchestration helpers
@@ -19,6 +19,7 @@ It does not own product code. Active edits should happen in repo-specific worktr
 │   ├── agent-packs/
 │   ├── commands/
 │   ├── plugins/
+│   ├── skills/
 │   └── tools/
 ├── bin/
 ├── instructions/
@@ -31,7 +32,7 @@ It does not own product code. Active edits should happen in repo-specific worktr
 1. Keep the canonical base checkouts in `repos/` as git submodules.
 2. Create per-task worktrees in `worktrees/<repo>/ENG-<id>-<slug>/`.
 3. Open OpenCode directly in each worktree for implementation.
-4. Use the control plane when you need shared commands, subagents, or bootstrap scripts.
+4. Use the control plane when you need shared commands, subagents, skills, or bootstrap scripts.
 5. Use `./bin/install-local-opencode <path>` to attach the shared OpenCode config to any repo or worktree without committing personal config files.
 
 ## Bootstrap

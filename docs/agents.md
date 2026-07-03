@@ -53,7 +53,7 @@ Automatic command permissions:
 - destructive git/package commands still require approval in restricted roles; Implementer and Validator are intentional unrestricted-bash exceptions
 - restricted roles should avoid `&&`, `;`, and pipes for simple diagnostics because separate commands preserve automatic permission matching
 
-`bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions:
+`bin/install-local-opencode` installs only the selected agent pack into repo/worktree sessions, plus shared commands, tools, and skills:
 - `repo` shows common agents plus Explorer, Implementer, and Validator.
 - `control-plane` shows common agents plus Manager, Auditor, and Release.
 - `full` shows common agents plus all project agents.

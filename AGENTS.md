@@ -37,7 +37,7 @@ This repository is a shared OpenCode control plane for multiple product reposito
 
 ## Commands And Agents
 
-- Shared OpenCode commands and agents are defined under `.opencode/`.
+- Shared OpenCode commands, agents, and skills are defined under `.opencode/`.
 - Use `bin/install-local-opencode` to expose the shared control-plane config inside repo-local sessions without committing personal OpenCode files.
 - Control-plane sessions default to Manager; repo/worktree sessions default to Explorer.
 - The built-in Build agent is disabled in shared OpenCode profiles.

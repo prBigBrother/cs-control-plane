@@ -158,6 +158,7 @@ link_relative "$ROOT/bin" "$TARGET/.opencode/bin"
 
 if [ "$TARGET" != "$ROOT" ]; then
   link_relative "$ROOT/.opencode/commands" "$TARGET/.opencode/commands"
+  link_relative "$ROOT/.opencode/skills" "$TARGET/.opencode/skills"
   link_relative "$ROOT/.opencode/tools" "$TARGET/.opencode/tools"
 fi
 
