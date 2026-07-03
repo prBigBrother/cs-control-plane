@@ -10,6 +10,7 @@ permission:
     "*": deny
     "datadog-investigator": allow
     "linear-operator": allow
+    "scout": allow
   bash:
     "*": ask
     "pwd": allow

@@ -107,10 +107,11 @@ for file in "${agent_files[@]}"; do
 
   min_steps=0
   case "$rel" in
-    .opencode/agent-packs/control-plane/manager.md) min_steps=16 ;;
+    .opencode/agent-packs/control-plane/manager.md) min_steps=32 ;;
+    .opencode/agent-packs/control-plane/control-explorer.md) min_steps=12 ;;
     .opencode/agent-packs/repo/explorer.md) min_steps=12 ;;
     .opencode/agent-packs/repo/implementer.md) min_steps=30 ;;
-    .opencode/agent-packs/repo/validator.md) min_steps=10 ;;
+    .opencode/agent-packs/repo/validator.md) min_steps=16 ;;
   esac
 
   if [ "$min_steps" -gt 0 ]; then
@@ -264,42 +265,50 @@ for file in \
   "$ROOT/.opencode/agent-packs/repo/implementer.md" \
   "$ROOT/.opencode/agent-packs/repo/validator.md"; do
   rel="${file#"$ROOT"/}"
-  for pattern in \
-    '    "git status*": allow' \
-    '    "git diff*": allow' \
-    '    "git diff *": allow' \
-    '    "git log*": allow' \
-    '    "git show*": allow' \
-    '    "git branch*": allow' \
-    '    "git rev-parse*": allow' \
-    '    "git ls-files*": allow' \
-    '    "npm run lint *": allow' \
-    '    "npm run typecheck *": allow' \
-    '    "python3 *": allow' \
-    '    "gh *": allow' \
-    '    "tap-spec *": allow' \
-    '    "ts-node *": allow' \
-    '    "grep *": allow' \
-    '    "rg *": allow' \
-    '    "echo *": allow' \
-    '    "awk *": allow'; do
-    if ! grep -qF "$pattern" "$file"; then
-      fail "$rel should allow requested diagnostic shell pattern: $pattern"
-    fi
-  done
 
-  for broad_pattern in \
-    '    "git *": allow' \
-    '    "npm *": allow' \
-    '    "pnpm *": allow' \
-    '    "yarn *": allow' \
-    '    "bun *": allow'; do
-    if grep -qF "$broad_pattern" "$file"; then
-      fail "$rel should not allow broad git/package-manager shell access: $broad_pattern"
-    fi
-  done
-
+  has_unrestricted_bash=0
   if grep -qF '    "*": allow' "$file"; then
+    has_unrestricted_bash=1
+  fi
+
+  if [ "$has_unrestricted_bash" -eq 0 ]; then
+    for pattern in \
+      '    "git status*": allow' \
+      '    "git diff*": allow' \
+      '    "git diff *": allow' \
+      '    "git log*": allow' \
+      '    "git show*": allow' \
+      '    "git branch*": allow' \
+      '    "git rev-parse*": allow' \
+      '    "git ls-files*": allow' \
+      '    "npm run lint *": allow' \
+      '    "npm run typecheck *": allow' \
+      '    "python3 *": allow' \
+      '    "gh *": allow' \
+      '    "tap-spec *": allow' \
+      '    "ts-node *": allow' \
+      '    "grep *": allow' \
+      '    "rg *": allow' \
+      '    "echo *": allow' \
+      '    "awk *": allow'; do
+      if ! grep -qF "$pattern" "$file"; then
+        fail "$rel should allow requested diagnostic shell pattern: $pattern"
+      fi
+    done
+
+    for broad_pattern in \
+      '    "git *": allow' \
+      '    "npm *": allow' \
+      '    "pnpm *": allow' \
+      '    "yarn *": allow' \
+      '    "bun *": allow'; do
+      if grep -qF "$broad_pattern" "$file"; then
+        fail "$rel should not allow broad git/package-manager shell access: $broad_pattern"
+      fi
+    done
+  fi
+
+  if [ "$has_unrestricted_bash" -eq 1 ]; then
     if ! grep -qF 'Bash commands are trusted' "$file"; then
       fail "$rel should document its unrestricted bash policy"
     fi
