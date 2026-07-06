@@ -43,3 +43,10 @@ This repository is a shared OpenCode control plane for multiple product reposito
 - The built-in Build agent is disabled in shared OpenCode profiles.
 - Repo-specific rules should stay in each repo's local `AGENTS.md`.
 - Shared behavior should be referenced through repo `opencode.json` files, not duplicated.
+
+## PR Review
+
+- Use `/pr-review <url>` for a **quick pass**: single agent, repo-aware, critical/medium only, compact output. This is the default for everyday reviews.
+- Use `/pr-review-deep <url>` for a **deep review**: delegates to the repo's existing `pr-review` skill (6 subagents: security, requirements, tests, architecture, regression, performance). Use for complex or high-risk PRs.
+- The quick pass uses `--trim` mode to skip test-plan sections, limit existing comments, and filter non-logic files from the review packet.
+- Neither command posts to GitHub without explicit approval. The deep review presents a draft and asks before posting.

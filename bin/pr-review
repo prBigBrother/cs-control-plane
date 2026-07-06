@@ -5,8 +5,12 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
-  echo "Usage: pr-review collect <pr-url>"
+  echo "Usage: pr-review collect [--trim] <pr-url>"
   echo "       pr-review submit <pr-url> <findings-json>"
+  echo
+  echo "Options:"
+  echo "  --trim    Generate a lean packet: truncate PR body, limit comments,"
+  echo "            filter non-logic files. Use for quick-pass reviews."
   echo
   echo "Findings JSON shape:"
   echo '[{"severity":"critical|medium|light","path":"src/file.ts","line":123,"title":"Short issue","body":"Review comment","suggestion":"Short fix direction","security":false}]'
@@ -55,6 +59,7 @@ review_dir_for() {
 
 collect() {
   local pr_url="$1"
+  local trim="${2:-false}"
   local out_dir viewer author is_author
 
   setup
@@ -78,20 +83,64 @@ collect() {
     is_author=true
   fi
 
+  # Derive repo slug for skill detection
+  local repo_slug
+  repo_slug="$(printf '%s\n' "$REPO" | sed 's|citizenshipper/||')"
+
   jq -n \
     --arg repo "$REPO" \
+    --arg repoSlug "$repo_slug" \
     --argjson number "$PR_NUMBER" \
     --arg viewer "$viewer" \
     --argjson isAuthor "$is_author" \
     --slurpfile meta "$out_dir/meta.json" \
-    '{repo:$repo, number:$number, viewer:$viewer, is_author:$isAuthor, pr:$meta[0]}' \
+    '{repo:$repo, repo_slug:$repoSlug, number:$number, viewer:$viewer, is_author:$isAuthor, pr:$meta[0]}' \
     >"$out_dir/context.json"
+
+  # Build description section
+  local description
+  if [ "$trim" = true ]; then
+    # Keep only the first 30 lines of the PR body, skip test-plan/checklist sections
+    description="$(jq -r '.body // "(empty)"' "$out_dir/meta.json" | head -30)"
+    # If the body contains a "## Test plan" or "### Test plan", truncate before it
+    description="$(printf '%s\n' "$description" | sed '/^## Test plan$/,$d' | sed '/^### Test plan$/,$d')"
+  else
+    description="$(jq -r '.body // "(empty)"' "$out_dir/meta.json")"
+  fi
+
+  # Build files list
+  local files_list
+  if [ "$trim" = true ]; then
+    # Filter out non-logic files: lockfiles, pure config, generated files
+    files_list="$(jq -r '
+      [.[] | select(
+        (.path | test("\\.(lock|snap|snapshot)$") | not) and
+        (.path | test("^package-lock\\.json$") | not) and
+        (.path | test("^yarn\\.lock$") | not) and
+        (.path | test("^pnpm-lock\\.yaml$") | not) and
+        (.path | test("\\.generated\\.") | not)
+      )]
+      | .[] | "- \(.path) (+\(.additions) -\(.deletions))"
+    ' "$out_dir/files.json")"
+  else
+    files_list="$(jq -r '.[] | "- \(.path) (+\(.additions) -\(.deletions))"' "$out_dir/files.json")"
+  fi
+
+  # Build existing comments section
+  local comments_section
+  if [ "$trim" = true ]; then
+    # Limit to most recent 10 comments
+    comments_section="$(jq -r '.[-10:]? | .[]? | "- [\(.user.login)] \(.path):\(.line // "?") \(.body | gsub("\n"; " ") | .[0:240])"' "$out_dir/review-comments.json")"
+  else
+    comments_section="$(jq -r '.[]? | "- [\(.user.login)] \(.path):\(.line // "?") \(.body | gsub("\n"; " ") | .[0:240])"' "$out_dir/review-comments.json")"
+  fi
 
   {
     echo "# PR Review Packet"
     echo
     echo "- PR: [$(jq -r '.title' "$out_dir/meta.json")]($pr_url)"
     echo "- Repository: $REPO"
+    echo "- Repo slug: $repo_slug"
     echo "- Number: $PR_NUMBER"
     echo "- Author: $author"
     echo "- Viewer: $viewer"
@@ -100,15 +149,22 @@ collect() {
     echo "- Review decision: $(jq -r '.reviewDecision // "UNKNOWN"' "$out_dir/meta.json")"
     echo "- Changed files: $(jq -r '.changedFiles' "$out_dir/meta.json")"
     echo "- Additions/deletions: +$(jq -r '.additions' "$out_dir/meta.json")/-$(jq -r '.deletions' "$out_dir/meta.json")"
+    if [ "$trim" = true ]; then
+      echo "- Mode: trim (quick-pass)"
+    fi
     echo
     echo "## Description"
-    jq -r '.body // "(empty)"' "$out_dir/meta.json"
+    printf '%s\n' "$description"
     echo
     echo "## Files"
-    jq -r '.[] | "- \(.path) (+\(.additions) -\(.deletions))"' "$out_dir/files.json"
+    printf '%s\n' "$files_list"
     echo
     echo "## Existing Review Comments"
-    jq -r '.[]? | "- [\(.user.login)] \(.path):\(.line // "?") \(.body | gsub("\n"; " ") | .[0:240])"' "$out_dir/review-comments.json"
+    if [ -n "$comments_section" ]; then
+      printf '%s\n' "$comments_section"
+    else
+      echo "(none)"
+    fi
     echo
     echo "## Local Files"
     echo "- Context JSON: $out_dir/context.json"
@@ -128,7 +184,7 @@ collect() {
 submit() {
   local pr_url="$1"
   local findings_file="$2"
-  local out_dir viewer author is_author event review_body payload_file comment_count
+  local out_dir viewer author is_author event review_body comment_count commit_id review_id
 
   setup
   parse_pr_url "$pr_url"
@@ -171,60 +227,87 @@ submit() {
     event="APPROVE"
   fi
 
+  commit_id="$(jq -r '.headRefOid' "$out_dir/submit-meta.json")"
+
+  # Build review body (summary shown in the review header)
   review_body="$(
     jq -r '
       def sev: (.severity // "light" | ascii_downcase);
-      def icon: if sev == "critical" then "Critical" elif sev == "medium" then "Medium" else "Light" end;
-      def suggestion_line: if (.suggestion // "") != "" then " Suggested solution: " + (.suggestion | gsub("\n"; " ")) else "" end;
+      def label: if sev == "critical" then "Critical" elif sev == "medium" then "Medium" else "Light" end;
       if length == 0 then
         "No blocking issues found."
       else
-        [ .[] | "- **" + icon + ": " + ((.title // .body // "Issue") | gsub("\n"; " ")) + "**" + suggestion_line ] | join("\n")
+        [ .[] | "- **" + label + ": " + ((.title // "Issue") | gsub("\n"; " ")) + "**" ] | join("\n")
       end
     ' "$out_dir/normalized-findings.json"
   )"
 
-  payload_file="$out_dir/review-payload.json"
-  jq -n \
-    --arg commit_id "$(jq -r '.headRefOid' "$out_dir/submit-meta.json")" \
-    --arg event "$event" \
-    --arg body "$review_body" \
-    --slurpfile findings "$out_dir/normalized-findings.json" '
-      {
-        commit_id: $commit_id,
-        event: $event,
-        body: $body,
-        comments: [
-          $findings[0][]
-          | select((.path // "") != "" and (.line // null) != null and (.body // "") != "")
-          | {
-              path: .path,
-              line: .line,
-              side: (.side // "RIGHT"),
-              body: (
-                "**" + ((.severity // "light") | ascii_downcase | ascii_upcase) + ": " + ((.title // "Issue") | tostring) + "**\n\n" +
-                (.body | tostring) +
-                (if (.suggestion // "") != "" then "\n\nSuggested solution: " + (.suggestion | tostring) else "" end)
-              )
-            }
-        ]
-      }
-    ' >"$payload_file"
+  # Build comment bodies with suggestion blocks
+  # Each comment body: **SEVERITY: Title**\n\nBody\n\n```suggestion\n...\n```
+  local comments_json
+  comments_json="$(
+    jq '
+      [
+        .[]
+        | select((.path // "") != "" and (.line // null) != null and (.body // "") != "")
+        | {
+            path: .path,
+            line: .line,
+            side: (.side // "RIGHT"),
+            body: (
+              "**" + ((.severity // "light") | ascii_downcase | ascii_upcase) + ": " + ((.title // "Issue") | tostring) + "**\n\n" +
+              (.body | tostring) +
+              (if (.suggestion // "") != "" then
+                "\n\n```suggestion\n" + (.suggestion | tostring) + "\n```"
+              else "" end)
+            )
+          }
+      ]
+    ' "$out_dir/normalized-findings.json"
+  )"
 
-  comment_count="$(jq '.comments | length' "$payload_file")"
-  gh api -X POST "/repos/$REPO/pulls/$PR_NUMBER/reviews" --input "$payload_file" >/dev/null
+  # Step 1: Create PENDING review (no event field)
+  review_id="$(
+    jq -n \
+      --arg commit_id "$commit_id" \
+      --argjson comments "$comments_json" \
+      '{commit_id: $commit_id, comments: $comments}' \
+    | gh api -X POST "/repos/$REPO/pulls/$PR_NUMBER/reviews" --input - --jq '.id'
+  )"
+
+  if [ -z "$review_id" ]; then
+    echo "Error: failed to create pending review" >&2
+    exit 6
+  fi
+
+  # Step 2: Submit the pending review with the chosen event
+  comment_count="$(echo "$comments_json" | jq 'length')"
+  gh api -X POST "/repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/events" \
+    -f event="$event" \
+    -f body="$review_body" >/dev/null
 
   if [ "$event" = "REQUEST_CHANGES" ]; then
-    echo "Requested changes on $REPO#$PR_NUMBER with $comment_count line comments."
+    echo "Requested changes on $REPO#$PR_NUMBER with $comment_count line comment(s)."
   else
-    echo "Approved $REPO#$PR_NUMBER with $comment_count line comments."
+    echo "Approved $REPO#$PR_NUMBER with $comment_count line comment(s)."
   fi
 }
 
 case "${1:-}" in
   collect)
-    [ "$#" -eq 2 ] || usage
-    collect "$2"
+    shift
+    trim=false
+    pr_url=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --trim) trim=true ;;
+        -*) usage ;;
+        *) pr_url="$1" ;;
+      esac
+      shift
+    done
+    [ -n "$pr_url" ] || usage
+    collect "$pr_url" "$trim"
     ;;
   submit)
     [ "$#" -eq 3 ] || usage
