@@ -230,20 +230,22 @@ submit() {
   commit_id="$(jq -r '.headRefOid' "$out_dir/submit-meta.json")"
 
   # Build review body (summary shown in the review header)
+  # Keep it conversational — don't duplicate inline comment titles
   review_body="$(
     jq -r '
-      def sev: (.severity // "light" | ascii_downcase);
-      def label: if sev == "critical" then "Critical" elif sev == "medium" then "Medium" else "Light" end;
       if length == 0 then
         "No blocking issues found."
+      elif length == 1 then
+        "Found 1 issue that needs attention. See inline comment for details."
       else
-        [ .[] | "- **" + label + ": " + ((.title // "Issue") | gsub("\n"; " ")) + "**" ] | join("\n")
+        "Found " + (length | tostring) + " issues that need attention. See inline comments for details."
       end
     ' "$out_dir/normalized-findings.json"
   )"
 
-  # Build comment bodies with suggestion blocks
-  # Each comment body: **SEVERITY: Title**\n\nBody\n\n```suggestion\n...\n```
+  # Build comment bodies
+  # Only use ```suggestion blocks when the suggestion is actual code (short, code-like).
+  # Otherwise append as plain text: "**Suggestion:** ..."
   local comments_json
   comments_json="$(
     jq '
@@ -258,7 +260,14 @@ submit() {
               "**" + ((.severity // "light") | ascii_downcase | ascii_upcase) + ": " + ((.title // "Issue") | tostring) + "**\n\n" +
               (.body | tostring) +
               (if (.suggestion // "") != "" then
-                "\n\n```suggestion\n" + (.suggestion | tostring) + "\n```"
+                (
+                  (.suggestion | tostring) as $s |
+                  if ($s | length) < 120 and ($s | test("^[\\s\\S]*[;{}()=<>\\[\\]]")) then
+                    "\n\n```suggestion\n" + $s + "\n```"
+                  else
+                    "\n\n**Suggestion:** " + $s
+                  end
+                )
               else "" end)
             )
           }
