@@ -3,102 +3,121 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DEFAULT_BUDGET=3000
 GRAPH="${GRAPHIFY_GRAPH:-}"
-BUDGET="$DEFAULT_BUDGET"
+BUDGET=3000
 DFS=0
+SCOPE=auto
 QUESTION_PARTS=()
 
 usage() {
   cat <<'USAGE'
-Usage: knowledge-query [--graph PATH] [--budget N] [--dfs] <question>
+Usage: knowledge-query [--graph PATH] [--budget N] [--dfs] [--scope SCOPE] <question>
 
-Run a graph-first codebase question against the local Graphify knowledge graph.
-
-Defaults:
-- graph: GRAPHIFY_GRAPH, ./graphify-out/merged-graph.json,
-         control-plane graphify-out/merged-graph.json, then ./graphify-out/graph.json
-- budget: 3000
-
-Examples:
-  knowledge-query "how does shipper email signup work?"
-  knowledge-query --budget 5000 "how is auth connected to signup tracking?"
-  knowledge-query --graph /path/to/merged-graph.json "what is affected by createEmailShipper?"
+Query Graphify with a relevance guard. SCOPE is auto, all, control-plane, or a graph repo name.
+Auto detects control-plane/OpenCode questions; product questions retain cross-repo graph behavior.
+When the merged graph has no control-plane corpus, a targeted local-file fallback is returned.
 USAGE
 }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    --graph)
-      [ "$#" -ge 2 ] || { echo "Error: --graph requires a path" >&2; exit 2; }
-      GRAPH="$2"
-      shift 2
-      ;;
-    --budget)
-      [ "$#" -ge 2 ] || { echo "Error: --budget requires a number" >&2; exit 2; }
-      BUDGET="$2"
-      shift 2
-      ;;
-    --dfs)
-      DFS=1
-      shift
-      ;;
-    --)
-      shift
-      while [ "$#" -gt 0 ]; do
-        QUESTION_PARTS+=("$1")
-        shift
-      done
-      ;;
-    *)
-      QUESTION_PARTS+=("$1")
-      shift
-      ;;
+    -h|--help) usage; exit 0 ;;
+    --graph) [ "$#" -ge 2 ] || { echo "knowledge-query: --graph needs a path" >&2; exit 2; }; GRAPH="$2"; shift 2 ;;
+    --budget) [ "$#" -ge 2 ] || { echo "knowledge-query: --budget needs a number" >&2; exit 2; }; BUDGET="$2"; shift 2 ;;
+    --scope) [ "$#" -ge 2 ] || { echo "knowledge-query: --scope needs a value" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
+    --dfs) DFS=1; shift ;;
+    --) shift; while [ "$#" -gt 0 ]; do QUESTION_PARTS+=("$1"); shift; done ;;
+    *) QUESTION_PARTS+=("$1"); shift ;;
   esac
 done
-
-if [ "${#QUESTION_PARTS[@]}" -eq 0 ]; then
-  usage >&2
-  exit 2
-fi
-
-if [ -z "$GRAPH" ]; then
-  for candidate in \
-    "$PWD/graphify-out/merged-graph.json" \
-    "$ROOT/graphify-out/merged-graph.json" \
-    "$PWD/graphify-out/graph.json"; do
-    if [ -f "$candidate" ]; then
-      GRAPH="$candidate"
-      break
-    fi
-  done
-fi
-
-if [ -z "$GRAPH" ] || [ ! -f "$GRAPH" ]; then
-  echo "Error: no Graphify graph found." >&2
-  echo "Expected graphify-out/merged-graph.json or set GRAPHIFY_GRAPH=/path/to/graph.json." >&2
-  echo "From the control plane, build it with: ./.opencode/bin/knowledge-bootstrap --extract --no-cluster --skip-control-docs" >&2
-  exit 3
-fi
-
-if ! command -v graphify >/dev/null 2>&1; then
-  echo "Error: graphify command not found. Install with: uv tool install graphifyy" >&2
-  exit 4
-fi
-
+[ "${#QUESTION_PARTS[@]}" -gt 0 ] || { usage >&2; exit 2; }
+[[ "$BUDGET" =~ ^[1-9][0-9]*$ ]] || { echo "knowledge-query: budget must be a positive integer" >&2; exit 2; }
 QUESTION="${QUESTION_PARTS[*]}"
 
-echo "Graph: $GRAPH"
-echo "Question: $QUESTION"
-echo
+if [ -z "$GRAPH" ]; then
+  for candidate in "$PWD/graphify-out/merged-graph.json" "$ROOT/graphify-out/merged-graph.json" "$PWD/graphify-out/graph.json"; do
+    if [ -f "$candidate" ]; then GRAPH="$candidate"; break; fi
+  done
+fi
+[ -n "$GRAPH" ] && [ -f "$GRAPH" ] || {
+  echo "knowledge-query: no Graphify graph; build one with: ./.opencode/bin/knowledge-bootstrap --extract --no-cluster --skip-control-docs" >&2
+  exit 3
+}
+command -v graphify >/dev/null 2>&1 || { echo "knowledge-query: graphify missing; run: uv tool install graphifyy" >&2; exit 4; }
+command -v jq >/dev/null 2>&1 || { echo "knowledge-query: jq is required" >&2; exit 4; }
 
-args=(query "$QUESTION" --graph "$GRAPH" --budget "$BUDGET")
-if [ "$DFS" -eq 1 ]; then
-  args+=(--dfs)
+if [ "$SCOPE" = auto ]; then
+  if printf '%s\n' "$QUESTION" | grep -Eiq 'control[- ]plane|opencode|agent pack|agent prompt|slash command|profile drift|session-brief|knowledge-query'; then
+    SCOPE=control-plane
+  else
+    SCOPE=all
+  fi
 fi
 
+control_fallback() {
+  echo "Scope: control-plane (local fallback; graph corpus has no control-plane nodes)"
+  echo "Relevant files:"
+  python3 - "$ROOT" "$QUESTION" <<'PY'
+import re
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+question = sys.argv[2].lower()
+stop = {"about","against","and","architecture","does","for","from","how","into","the","this","what","where","with","work"}
+terms = [term for term in re.findall(r"[a-z0-9_-]{3,}", question) if term not in stop]
+paths = [root / "AGENTS.md", root / "README.md"]
+for pattern in ("instructions/*.md", ".opencode/agents/*.md", ".opencode/agent-packs/**/*.md", ".opencode/commands/*.md", "bin/*", "docs/*.md"):
+    paths.extend(root.glob(pattern))
+ranked = []
+for path in paths:
+    if not path.is_file() or path.is_symlink() and not path.exists():
+        continue
+    try:
+        text = path.read_text(errors="replace").lower()
+    except OSError:
+        continue
+    rel = str(path.relative_to(root))
+    score = sum(text.count(term) * 2 + rel.lower().count(term) * 5 for term in terms)
+    if score:
+        ranked.append((-score, rel))
+for _, rel in sorted(set(ranked))[:12]:
+    print(f"- {rel}")
+if not ranked:
+    print("- AGENTS.md")
+    print("- instructions/shared.md")
+    print("- .opencode/agent-packs/")
+    print("- bin/")
+PY
+  echo "Verify behavior in these source files; product graph results were intentionally suppressed."
+}
+
+QUERY_GRAPH="$GRAPH"
+SCOPE_TEMP_DIR=""
+cleanup_scope() {
+  if [ -n "$SCOPE_TEMP_DIR" ]; then rm -rf "$SCOPE_TEMP_DIR"; fi
+}
+trap cleanup_scope EXIT
+if [ "$SCOPE" = control-plane ]; then
+  count="$(jq '[.nodes[]? | select(.repo == "control-plane")] | length' "$GRAPH")"
+  if [ "$count" -eq 0 ]; then control_fallback; exit 0; fi
+elif [ "$SCOPE" != all ]; then
+  count="$(jq --arg scope "$SCOPE" '[.nodes[]? | select(.repo == $scope)] | length' "$GRAPH")"
+  [ "$count" -gt 0 ] || { echo "knowledge-query: scope '$SCOPE' has no graph nodes" >&2; exit 5; }
+fi
+
+if [ "$SCOPE" != all ]; then
+  SCOPE_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/knowledge-query.XXXXXX")"
+  QUERY_GRAPH="$SCOPE_TEMP_DIR/graph.json"
+  jq --arg scope "$SCOPE" '
+    [.nodes[] | select(.repo == $scope)] as $nodes |
+    ($nodes | map({key:.id,value:true}) | from_entries) as $ids |
+    .nodes = $nodes |
+    .edges = [.edges[]? | select($ids[.source] and $ids[.target])] |
+    .hyperedges = []
+  ' "$GRAPH" >"$QUERY_GRAPH"
+fi
+
+printf 'Scope: %s\nGraph: %s\nQuestion: %s\n\n' "$SCOPE" "$QUERY_GRAPH" "$QUESTION"
+args=(query "$QUESTION" --graph "$QUERY_GRAPH" --budget "$BUDGET")
+[ "$DFS" -eq 0 ] || args+=(--dfs)
 graphify "${args[@]}"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+graph=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --graph ]; then graph="$2"; shift 2; else shift; fi
+done
+[ -f "$graph" ] || { echo "fixture graph missing" >&2; exit 1; }
+case "$graph" in
+  */control-plane/tmp/*) echo "scoped graph persisted in repo tmp" >&2; exit 1 ;;
+esac
+echo "Fixture scoped query: $graph"

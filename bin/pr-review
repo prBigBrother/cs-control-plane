@@ -6,14 +6,15 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
   echo "Usage: pr-review collect [--trim] <pr-url>"
-  echo "       pr-review submit <pr-url> <findings-json>"
+  echo "       pr-review render <context-json> <findings-json>"
+  echo "       pr-review skill <pr-url>"
+  echo "       pr-review submit --approved <pr-url> <findings-json>"
   echo
   echo "Options:"
   echo "  --trim    Generate a lean packet: truncate PR body, limit comments,"
   echo "            filter non-logic files. Use for quick-pass reviews."
   echo
-  echo "Findings JSON shape:"
-  echo '[{"severity":"critical|medium|light","path":"src/file.ts","line":123,"title":"Short issue","body":"Review comment","suggestion":"Short fix direction","security":false}]'
+  echo "Collect discovers repo rules and creates a compact review packet."
   exit "${1:-1}"
 }
 
@@ -60,7 +61,7 @@ review_dir_for() {
 collect() {
   local pr_url="$1"
   local trim="${2:-false}"
-  local out_dir viewer author is_author
+  local out_dir viewer author is_author rules_source
 
   setup
   parse_pr_url "$pr_url"
@@ -94,8 +95,27 @@ collect() {
     --arg viewer "$viewer" \
     --argjson isAuthor "$is_author" \
     --slurpfile meta "$out_dir/meta.json" \
-    '{repo:$repo, repo_slug:$repoSlug, number:$number, viewer:$viewer, is_author:$isAuthor, pr:$meta[0]}' \
+    '{repo:$repo, repo_slug:$repoSlug, number:$number, viewer:$viewer, is_author:$isAuthor, pr:($meta[0] | {url,title,state,author,baseRefName,headRefName,headRefOid,reviewDecision,additions,deletions,changedFiles})}' \
     >"$out_dir/context.json"
+
+  rules_source=""
+  for candidate in \
+    "$ROOT/repos/$repo_slug/.agents.md" \
+    "$ROOT/repos/$repo_slug/.claude/claude.md" \
+    "$ROOT/repos/$repo_slug/AGENTS.md"; do
+    if [ -f "$candidate" ]; then
+      rules_source="$candidate"
+      break
+    fi
+  done
+  if [ -n "$rules_source" ]; then
+    cp "$rules_source" "$out_dir/repo-rules.md"
+  else
+    printf '%s\n' "No repo-specific rules found; use general correctness and security checks." >"$out_dir/repo-rules.md"
+  fi
+  jq --arg rules "$rules_source" '. + {rules_source:($rules | if . == "" then null else . end)}' \
+    "$out_dir/context.json" >"$out_dir/context.tmp"
+  mv "$out_dir/context.tmp" "$out_dir/context.json"
 
   # Build description section
   local description
@@ -136,7 +156,7 @@ collect() {
   fi
 
   {
-    echo "# PR Review Packet"
+    echo "# Quick PR Review"
     echo
     echo "- PR: [$(jq -r '.title' "$out_dir/meta.json")]($pr_url)"
     echo "- Repository: $REPO"
@@ -152,6 +172,7 @@ collect() {
     if [ "$trim" = true ]; then
       echo "- Mode: trim (quick-pass)"
     fi
+    echo "- Repo rules: ${rules_source:-none found}"
     echo
     echo "## Description"
     printf '%s\n' "$description"
@@ -166,19 +187,83 @@ collect() {
       echo "(none)"
     fi
     echo
+    echo "## Review Contract"
+    echo "Report only actionable security, correctness, regression, migration, or missing-test defects."
+    echo "Skip style, naming, formatting, docs-only, lockfile, and speculative improvements."
+    echo "Severities: critical breaks deploy/auth or leaks data; medium is a likely bug/risky migration/test gap; light is an obvious one-line fix."
+    echo "Never invent findings. Security findings are critical."
+    echo
     echo "## Local Files"
     echo "- Context JSON: $out_dir/context.json"
     echo "- Metadata JSON: $out_dir/meta.json"
     echo "- Files JSON: $out_dir/files.json"
     echo "- Diff patch: $out_dir/diff.patch"
+    echo "- Repo rules: $out_dir/repo-rules.md"
     echo "- Findings JSON target: $out_dir/findings.json"
   } >"$out_dir/packet.md"
 
-  echo "Review packet: $out_dir/packet.md"
-  echo "Diff patch: $out_dir/diff.patch"
-  echo "Context JSON: $out_dir/context.json"
-  echo "Findings JSON target: $out_dir/findings.json"
-  echo "Viewer is PR author: $is_author"
+  printf 'Review input: %s (diff=%s, rules=%s, findings=%s, own_pr=%s)\n' \
+    "$out_dir/packet.md" "$out_dir/diff.patch" "$out_dir/repo-rules.md" "$out_dir/findings.json" "$is_author"
+}
+
+validate_findings() {
+  local findings_file="$1"
+  jq -e '
+    type == "array" and all(.[];
+      (.severity | IN("critical","medium","light")) and
+      (.title | type == "string") and (.body | type == "string") and
+      ((.path // "") | type == "string") and
+      ((.line == null) or (.line | type == "number"))
+    )
+  ' "$findings_file" >/dev/null || {
+    echo "pr-review: invalid findings JSON; expected severity, title, body, optional path/line/suggestion/security" >&2
+    exit 5
+  }
+}
+
+render() {
+  local context_file="$1"
+  local findings_file="$2"
+  [ -f "$context_file" ] || { echo "pr-review: context not found: $context_file" >&2; exit 5; }
+  [ -f "$findings_file" ] || { echo "pr-review: findings not found: $findings_file" >&2; exit 5; }
+  validate_findings "$findings_file"
+  jq -nr --argjson context "$(cat "$context_file")" --argjson findings "$(cat "$findings_file")" '
+    def section($severity):
+      [$findings[] | select(.severity == $severity)] as $items |
+      if ($items|length) == 0 then "" else
+        "\n### " + ($severity|ascii_upcase) + " (" + (($items|length)|tostring) + ")\n" +
+        ($items | to_entries | map(
+          ((.key+1)|tostring) + ". `" + (.value.path // "general") +
+          (if .value.line == null then "" else ":" + (.value.line|tostring) end) + "` — **" + .value.title + "**\n   " +
+          (.value.body | gsub("\n"; " ")) +
+          (if (.value.suggestion // "") == "" then "" else "\n   → " + (.value.suggestion | gsub("\n"; " ")) end)
+        ) | join("\n"))
+      end;
+    ($findings|length) as $total |
+    [$findings[] | select(.severity == "critical")]|length as $critical |
+    [$findings[] | select(.severity == "medium")]|length as $medium |
+    [$findings[] | select(.severity == "light")]|length as $light |
+    "## PR Review — #" + ($context.number|tostring) + "\n\n" +
+    "**" + $context.repo + "** · " + ($context.pr.changedFiles|tostring) + " files (" +
+    "+" + ($context.pr.additions|tostring) + "/-" + ($context.pr.deletions|tostring) + ") · " +
+    ($total|tostring) + " findings (" + ($critical|tostring) + " critical, " + ($medium|tostring) + " medium, " + ($light|tostring) + " light)\n" +
+    section("critical") + section("medium") + section("light") +
+    (if $total == 0 then "\n\nNo blocking issues." else "" end) + "\n\n" + $context.pr.url
+  '
+}
+
+skill_path() {
+  local pr_url="$1"
+  parse_pr_url "$pr_url"
+  local repo_slug candidate
+  repo_slug="$(printf '%s\n' "$REPO" | sed 's|.*/||')"
+  for candidate in \
+    "$ROOT/repos/$repo_slug/.opencode/skills/pr-review/SKILL.md" \
+    "$ROOT/repos/$repo_slug/.claude/skills/pr-review/SKILL.md"; do
+    if [ -f "$candidate" ]; then printf '%s\n' "$candidate"; return 0; fi
+  done
+  echo "pr-review: no deep-review skill for $repo_slug; use /pr-review" >&2
+  return 6
 }
 
 submit() {
@@ -193,6 +278,7 @@ submit() {
     echo "Error: findings JSON not found: $findings_file" >&2
     exit 5
   fi
+  validate_findings "$findings_file"
 
   out_dir="$(review_dir_for)"
   mkdir -p "$out_dir"
@@ -215,9 +301,7 @@ submit() {
   ' "$findings_file" >"$out_dir/normalized-findings.json"
 
   if [ "$is_author" = true ]; then
-    echo "PR is authored by $viewer; refusing to comment, approve, or request changes."
-    echo "Normalized findings:"
-    cat "$out_dir/normalized-findings.json"
+    echo "Own PR: review not posted; findings: $out_dir/normalized-findings.json"
     exit 0
   fi
 
@@ -318,9 +402,20 @@ case "${1:-}" in
     [ -n "$pr_url" ] || usage
     collect "$pr_url" "$trim"
     ;;
-  submit)
+  render)
     [ "$#" -eq 3 ] || usage
-    submit "$2" "$3"
+    render "$2" "$3"
+    ;;
+  skill)
+    [ "$#" -eq 2 ] || usage
+    skill_path "$2"
+    ;;
+  submit)
+    if [ "$#" -ne 4 ] || [ "$2" != "--approved" ]; then
+      echo "pr-review: submit requires --approved after explicit user approval" >&2
+      exit 7
+    fi
+    submit "$3" "$4"
     ;;
   -h|--help)
     usage 0

@@ -1,0 +1,10 @@
+[
+  {
+    "severity": "medium",
+    "path": "src/checkout.ts",
+    "line": 17,
+    "title": "Failure is swallowed",
+    "body": "The catch path returns success after a rejected payment.",
+    "suggestion": "Return the payment failure."
+  }
+]

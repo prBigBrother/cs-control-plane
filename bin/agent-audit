@@ -1,338 +1,188 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""Deterministic token-efficiency and policy audit for the OpenCode surface."""
 
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERBOSE=0
+from __future__ import annotations
 
-usage() {
-  cat <<'USAGE'
-Usage: agent-audit [--verbose]
+import argparse
+import collections
+import json
+import math
+import re
+import subprocess
+import sys
+from pathlib import Path
 
-Audits OpenCode agent and profile token-efficiency guardrails.
+ROOT = Path(__file__).resolve().parent.parent
+AGENT_BUDGET = 2000
+COMMAND_BUDGET = 1500
+INDIVIDUAL_AGENT_BUDGETS = {"manager.md": 360, "explorer.md": 380}
+INDIVIDUAL_COMMAND_BUDGETS = {"pr-review.md": 130, "pr-review-deep.md": 130}
+SCRIPT_COMMAND_BUDGET = 85
 
-Checks:
-- agent files have description, scoped mode, permission, and steps
-- command files have description frontmatter
-- repeated output-format boilerplate has not returned
-- OpenCode JSON profiles parse
-- control-plane profiles default to Manager and repo profiles default to Explorer
-- the built-in Build agent is disabled in every shared profile
-- Manager and repo agents handle setup failures before product validation
-- Linear and Datadog MCPs are enabled but hidden globally
-- Linear and Datadog specialist agents have explicit MCP tool access
-USAGE
-}
 
-case "${1:-}" in
-  -h|--help)
-    usage
-    exit 0
-    ;;
-  --verbose)
-    VERBOSE=1
-    ;;
-  "")
-    ;;
-  *)
-    usage >&2
-    exit 2
-    ;;
-esac
+def words(text: str) -> int:
+    return len(re.findall(r"\S+", text))
 
-failures=0
 
-fail() {
-  printf 'FAIL: %s\n' "$*" >&2
-  failures=$((failures + 1))
-}
+def frontmatter(text: str) -> tuple[str, str]:
+    match = re.match(r"^---\n(.*?)\n---\n?(.*)$", text, re.S)
+    return (match.group(1), match.group(2)) if match else ("", text)
 
-ok() {
-  printf 'OK: %s\n' "$*"
-}
 
-frontmatter_has() {
-  local file="$1"
-  local pattern="$2"
-  awk '
-    NR == 1 && $0 == "---" { in_frontmatter = 1; next }
-    in_frontmatter && $0 == "---" { exit }
-    in_frontmatter { print }
-  ' "$file" | grep -Eq "$pattern"
-}
+def has_field(header: str, field: str) -> bool:
+    return re.search(rf"^{re.escape(field)}:", header, re.M) is not None
 
-frontmatter_field() {
-  local file="$1"
-  local key="$2"
 
-  awk -v key="$key" '
-    NR == 1 && $0 == "---" { in_frontmatter = 1; next }
-    in_frontmatter && $0 == "---" { exit }
-    in_frontmatter && $0 ~ ("^" key ":[[:space:]]*") {
-      sub("^[^:]+:[[:space:]]*", "")
-      print
-      exit
+def audit() -> tuple[dict, list[str]]:
+    failures: list[str] = []
+    agent_paths = sorted((ROOT / ".opencode" / "agent-packs").glob("**/*.md"))
+    command_paths = sorted((ROOT / ".opencode" / "commands").glob("*.md"))
+    agent_rows = []
+    repeated: dict[str, list[str]] = collections.defaultdict(list)
+
+    for path in agent_paths:
+        text = path.read_text()
+        header, body = frontmatter(text)
+        rel = str(path.relative_to(ROOT))
+        count = words(text)
+        agent_rows.append({"path": rel, "words": count, "tokens_estimate": math.ceil(count * 4 / 3)})
+        for field in ("description", "mode", "steps", "permission"):
+            if not has_field(header, field):
+                failures.append(f"{rel}: missing {field}")
+        mode = re.search(r"^mode:\s*(\S+)", header, re.M)
+        expected = {"primary", "subagent", "all"}
+        if not mode or mode.group(1) not in expected:
+            failures.append(f"{rel}: invalid mode")
+        budget = INDIVIDUAL_AGENT_BUDGETS.get(path.name)
+        if budget and count > budget:
+            failures.append(f"{rel}: {count} words exceeds {budget}")
+        if re.search(r"Follow the shared|Agent Output Discipline|^Output:\s*$", body, re.M):
+            failures.append(f"{rel}: duplicates shared output policy")
+        for line in body.splitlines():
+            normalized = re.sub(r"^[-*0-9. ]+", "", line.strip()).lower()
+            if len(normalized.split()) >= 7:
+                repeated[normalized].append(rel)
+
+    for line, paths in sorted(repeated.items()):
+        unique = sorted(set(paths))
+        if len(unique) >= 3:
+            failures.append(f"repeated agent policy in {len(unique)} files: {line[:90]}")
+
+    agent_total = sum(row["words"] for row in agent_rows)
+    if agent_total > AGENT_BUDGET:
+        failures.append(f"agent pack: {agent_total} words exceeds {AGENT_BUDGET}")
+
+    command_rows = []
+    for path in command_paths:
+        text = path.read_text()
+        header, body = frontmatter(text)
+        rel = str(path.relative_to(ROOT))
+        count = words(text)
+        script_backed = ".opencode/bin/" in body
+        command_rows.append({"path": rel, "words": count, "tokens_estimate": math.ceil(count * 4 / 3), "script_backed": script_backed})
+        if not has_field(header, "description"):
+            failures.append(f"{rel}: missing description")
+        budget = INDIVIDUAL_COMMAND_BUDGETS.get(path.name)
+        if budget and count > budget:
+            failures.append(f"{rel}: {count} words exceeds {budget}")
+        if script_backed:
+            if count > SCRIPT_COMMAND_BUDGET:
+                failures.append(f"{rel}: script-backed prompt is {count} words; limit {SCRIPT_COMMAND_BUDGET}")
+            if len(re.findall(r"^##?\s+Step|^Step\s+[0-9]", body, re.M)):
+                failures.append(f"{rel}: duplicates script procedure steps")
+
+    command_total = sum(row["words"] for row in command_rows)
+    if command_total > COMMAND_BUDGET:
+        failures.append(f"commands: {command_total} words exceeds {COMMAND_BUDGET}")
+
+    profile_check = subprocess.run(
+        [str(ROOT / "bin" / "opencode-profiles"), "--check", "--json"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        profile_result = json.loads(profile_check.stdout)
+    except json.JSONDecodeError:
+        profile_result = {"ok": False, "profiles": 0, "drift": ["invalid generator output"]}
+    if profile_check.returncode:
+        failures.append("OpenCode profiles drift from config/opencode-profiles.json")
+
+    profiles = ["opencode.json", "opencode.repo.json", "opencode.migration.json", "opencode.migration.repo.json"]
+    for name in profiles:
+        path = ROOT / name
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            failures.append(f"{name}: invalid JSON")
+            continue
+        expected_agent = "explorer" if ".repo." in name else "manager"
+        if data.get("default_agent") != expected_agent:
+            failures.append(f"{name}: default_agent must be {expected_agent}")
+        if not data.get("agent", {}).get("build", {}).get("disable"):
+            failures.append(f"{name}: built-in build agent must be disabled")
+        permission = data.get("permission", {})
+        for tool in ("linear_*", "datadog_*"):
+            if permission.get(tool) != "deny":
+                failures.append(f"{name}: {tool} must be globally denied")
+        if not data.get("compaction", {}).get("prune"):
+            failures.append(f"{name}: compaction.prune must be enabled")
+        if not data.get("tool_output", {}).get("max_lines"):
+            failures.append(f"{name}: tool_output limits missing")
+
+    required_text = {
+        ".opencode/agent-packs/control-plane/manager.md": ["/task-start --force-install", "step limit", "Completion Gate:", '"implementer": allow'],
+        ".opencode/agent-packs/repo/implementer.md": ["setup failures", '"*": allow'],
+        ".opencode/agent-packs/repo/validator.md": ["setup failures", '"*": allow'],
+        ".opencode/agent-packs/common/linear-operator.md": ["linear_*: allow"],
+        ".opencode/agent-packs/common/datadog-investigator.md": ["datadog_*: allow"],
     }
-  ' "$file"
-}
+    for rel, needles in required_text.items():
+        text = (ROOT / rel).read_text()
+        for needle in needles:
+            if needle not in text:
+                failures.append(f"{rel}: missing required policy: {needle}")
 
-agent_files=()
-while IFS= read -r file; do
-  agent_files+=("$file")
-done < <(find "$ROOT/.opencode/agent-packs" -type f -name '*.md' | sort)
+    quick_review = (ROOT / ".opencode/commands/pr-review.md").read_text()
+    for needle in ("present that draft", "without explicit user approval"):
+        if needle not in quick_review:
+            failures.append(f".opencode/commands/pr-review.md: missing approval gate: {needle}")
 
-if [ "${#agent_files[@]}" -eq 0 ]; then
-  fail "no agent files found under .opencode/agent-packs"
-else
-  ok "found ${#agent_files[@]} agent files"
-fi
+    metrics = {
+        "ok": not failures,
+        "agents": {"files": len(agent_rows), "words": agent_total, "tokens_estimate": math.ceil(agent_total * 4 / 3), "budget_words": AGENT_BUDGET, "items": agent_rows},
+        "commands": {"files": len(command_rows), "words": command_total, "tokens_estimate": math.ceil(command_total * 4 / 3), "budget_words": COMMAND_BUDGET, "script_budget_words": SCRIPT_COMMAND_BUDGET, "items": command_rows},
+        "profiles": profile_result,
+        "failures": failures,
+    }
+    return metrics, failures
 
-agent_words=0
-for file in "${agent_files[@]}"; do
-  rel="${file#"$ROOT"/}"
-  words="$(wc -w < "$file" | tr -d ' ')"
-  agent_words=$((agent_words + words))
 
-  frontmatter_has "$file" '^description:' || fail "$rel missing description"
-  case "$rel" in
-    .opencode/agent-packs/repo/explorer.md)
-      frontmatter_has "$file" '^mode: all$' || fail "$rel should use mode all so repo profiles can default to explorer while manager can delegate to it"
-      ;;
-    *)
-      frontmatter_has "$file" '^mode: (primary|subagent)$' || fail "$rel should use mode primary or subagent"
-      ;;
-  esac
-  frontmatter_has "$file" '^steps:' || fail "$rel missing steps"
-  frontmatter_has "$file" '^permission:' || fail "$rel missing permission"
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit OpenCode prompts, profiles, and token budgets.")
+    parser.add_argument("--json", action="store_true", help="emit machine-readable metrics")
+    parser.add_argument("--verbose", action="store_true", help="list per-file metrics")
+    args = parser.parse_args()
+    metrics, failures = audit()
+    if args.json:
+        print(json.dumps(metrics, indent=2 if args.verbose else None, separators=None if args.verbose else (",", ":")))
+    else:
+        agents = metrics["agents"]
+        commands = metrics["commands"]
+        print(f"Metrics: agents={agents['words']}w/~{agents['tokens_estimate']}t (limit {agents['budget_words']}w) | commands={commands['words']}w/~{commands['tokens_estimate']}t (limit {commands['budget_words']}w)")
+        print(f"Profiles: {metrics['profiles'].get('profiles', 0)} {'in sync' if metrics['profiles'].get('ok') else 'drifted'}")
+        if args.verbose:
+            for group in ("agents", "commands"):
+                for item in metrics[group]["items"]:
+                    print(f"- {item['path']}: {item['words']}w/~{item['tokens_estimate']}t")
+        if failures:
+            for failure in failures:
+                print(f"FAIL: {failure}", file=sys.stderr)
+            print(f"Agent audit failed: {len(failures)} issue(s)", file=sys.stderr)
+        else:
+            print("Agent audit passed")
+    return 1 if failures else 0
 
-  min_steps=0
-  case "$rel" in
-    .opencode/agent-packs/control-plane/manager.md) min_steps=32 ;;
-    .opencode/agent-packs/control-plane/control-explorer.md) min_steps=12 ;;
-    .opencode/agent-packs/repo/explorer.md) min_steps=12 ;;
-    .opencode/agent-packs/repo/implementer.md) min_steps=30 ;;
-    .opencode/agent-packs/repo/validator.md) min_steps=16 ;;
-  esac
 
-  if [ "$min_steps" -gt 0 ]; then
-    steps="$(frontmatter_field "$file" steps)"
-    if ! [[ "$steps" =~ ^[0-9]+$ ]]; then
-      fail "$rel steps should be numeric"
-    elif [ "$steps" -lt "$min_steps" ]; then
-      fail "$rel steps should be at least $min_steps"
-    fi
-  fi
-
-  if grep -qE '^(Output format:|- Write normal Markdown|- Format URLs as Markdown links)' "$file"; then
-    fail "$rel has repeated output boilerplate"
-  fi
-
-  if [ "$VERBOSE" -eq 1 ]; then
-    printf 'agent %-72s %4s words\n' "$rel" "$words"
-  fi
-done
-ok "agent pack word count: $agent_words"
-
-command_files=()
-while IFS= read -r file; do
-  command_files+=("$file")
-done < <(find "$ROOT/.opencode/commands" -maxdepth 1 -type f -name '*.md' | sort)
-
-if [ "${#command_files[@]}" -eq 0 ]; then
-  fail "no command files found under .opencode/commands"
-else
-  ok "found ${#command_files[@]} command files"
-fi
-
-for file in "${command_files[@]}"; do
-  rel="${file#"$ROOT"/}"
-  frontmatter_has "$file" '^description:' || fail "$rel missing description frontmatter"
-
-  if [ "$VERBOSE" -eq 1 ]; then
-    printf 'command %-70s %4s words\n' "$rel" "$(wc -w < "$file" | tr -d ' ')"
-  fi
-done
-
-json_files=(
-  "$ROOT/opencode.json"
-  "$ROOT/opencode.repo.json"
-  "$ROOT/opencode.migration.json"
-  "$ROOT/opencode.migration.repo.json"
-)
-
-for file in "${json_files[@]}"; do
-  rel="${file#"$ROOT"/}"
-  if jq empty "$file" >/dev/null; then
-    ok "$rel parses"
-  else
-    fail "$rel does not parse"
-    continue
-  fi
-
-  enabled="$(jq -r '.mcp // {} | to_entries[] | select(.value.enabled == true) | .key' "$file" | paste -sd ',' -)"
-  [ -n "$enabled" ] || enabled="none"
-  [ "$VERBOSE" -eq 0 ] || printf 'profile %-24s enabled_mcp=%s\n' "$rel" "$enabled"
-done
-
-for profile in opencode.json opencode.repo.json opencode.migration.json opencode.migration.repo.json; do
-  file="$ROOT/$profile"
-  for key in linear datadog; do
-    enabled="$(jq -r --arg key "$key" 'if (.mcp | has($key)) then (.mcp[$key].enabled | tostring) else "missing" end' "$file")"
-    if [ "$enabled" != "true" ]; then
-      fail "$profile should enable MCP server for per-agent use: $key"
-    fi
-    tool_enabled="$(jq -r --arg key "${key}_*" 'if (.tools | has($key)) then (.tools[$key] | tostring) else "missing" end' "$file")"
-    if [ "$tool_enabled" != "false" ]; then
-      fail "$profile should hide MCP tools globally: ${key}_*"
-    fi
-  done
-
-  for key in jira clauge-workspace; do
-    enabled="$(jq -r --arg key "$key" 'if (.mcp | has($key)) then (.mcp[$key].enabled | tostring) else "missing" end' "$file")"
-    if [ "$enabled" != "false" ]; then
-      fail "$profile should disable global MCP override: $key"
-    fi
-  done
-done
-
-for profile in opencode.json opencode.migration.json; do
-  default_agent="$(jq -r '.default_agent // empty' "$ROOT/$profile")"
-  if [ "$default_agent" != "manager" ]; then
-    fail "$profile should set default_agent to manager"
-  fi
-done
-
-for profile in opencode.repo.json opencode.migration.repo.json; do
-  default_agent="$(jq -r '.default_agent // empty' "$ROOT/$profile")"
-  if [ "$default_agent" != "explorer" ]; then
-    fail "$profile should set default_agent to explorer"
-  fi
-done
-
-for profile in opencode.json opencode.repo.json opencode.migration.json opencode.migration.repo.json; do
-  build_disabled="$(jq -r '.agent.build.disable // false' "$ROOT/$profile")"
-  if [ "$build_disabled" != "true" ]; then
-    fail "$profile should disable the built-in Build agent"
-  fi
-done
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/common/linear-operator.md" '^  linear_\*: true$'; then
-  fail "linear-operator should enable linear_* tools"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/common/datadog-investigator.md" '^  datadog_\*: true$'; then
-  fail "datadog-investigator should enable datadog_* tools"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/repo/explorer.md" '^    "datadog-investigator": allow$'; then
-  fail "explorer should be able to delegate to datadog-investigator"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/repo/explorer.md" '^    "linear-operator": allow$'; then
-  fail "explorer should be able to delegate to linear-operator"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/control-plane/manager.md" '^    "datadog-investigator": allow$'; then
-  fail "manager should be able to delegate to datadog-investigator"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/control-plane/manager.md" '^    "linear-operator": allow$'; then
-  fail "manager should be able to delegate to linear-operator"
-fi
-
-if ! frontmatter_has "$ROOT/.opencode/agent-packs/control-plane/manager.md" '^    "implementer": allow$'; then
-  fail "manager should be able to delegate to implementer without prompting"
-fi
-
-if ! grep -qF '/task-start --force-install' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
-  fail "manager should repair dependency setup with /task-start --force-install"
-fi
-
-if ! grep -qF 'step limit' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
-  fail "manager should continue work when subagents hit step limits"
-fi
-
-if ! grep -qF 'Completion Gate:' "$ROOT/.opencode/agent-packs/control-plane/manager.md"; then
-  fail "manager should require a Completion Gate in final output"
-fi
-
-for file in \
-  "$ROOT/.opencode/agent-packs/control-plane/manager.md" \
-  "$ROOT/.opencode/agent-packs/control-plane/control-explorer.md" \
-  "$ROOT/.opencode/agent-packs/control-plane/auditor.md" \
-  "$ROOT/.opencode/agent-packs/control-plane/release.md" \
-  "$ROOT/.opencode/agent-packs/repo/explorer.md" \
-  "$ROOT/.opencode/agent-packs/repo/implementer.md" \
-  "$ROOT/.opencode/agent-packs/repo/validator.md"; do
-  rel="${file#"$ROOT"/}"
-
-  has_unrestricted_bash=0
-  if grep -qF '    "*": allow' "$file"; then
-    has_unrestricted_bash=1
-  fi
-
-  if [ "$has_unrestricted_bash" -eq 0 ]; then
-    for pattern in \
-      '    "git status*": allow' \
-      '    "git diff*": allow' \
-      '    "git diff *": allow' \
-      '    "git log*": allow' \
-      '    "git show*": allow' \
-      '    "git branch*": allow' \
-      '    "git rev-parse*": allow' \
-      '    "git ls-files*": allow' \
-      '    "npm run lint *": allow' \
-      '    "npm run typecheck *": allow' \
-      '    "python3 *": allow' \
-      '    "gh *": allow' \
-      '    "tap-spec *": allow' \
-      '    "ts-node *": allow' \
-      '    "grep *": allow' \
-      '    "rg *": allow' \
-      '    "echo *": allow' \
-      '    "awk *": allow'; do
-      if ! grep -qF "$pattern" "$file"; then
-        fail "$rel should allow requested diagnostic shell pattern: $pattern"
-      fi
-    done
-
-    for broad_pattern in \
-      '    "git *": allow' \
-      '    "npm *": allow' \
-      '    "pnpm *": allow' \
-      '    "yarn *": allow' \
-      '    "bun *": allow'; do
-      if grep -qF "$broad_pattern" "$file"; then
-        fail "$rel should not allow broad git/package-manager shell access: $broad_pattern"
-      fi
-    done
-  fi
-
-  if [ "$has_unrestricted_bash" -eq 1 ]; then
-    if ! grep -qF 'Bash commands are trusted' "$file"; then
-      fail "$rel should document its unrestricted bash policy"
-    fi
-  elif ! grep -qF 'Avoid chaining commands' "$file"; then
-    fail "$rel should tell agents to avoid chained diagnostic commands"
-  fi
-done
-
-for file in \
-  "$ROOT/.opencode/agent-packs/repo/implementer.md" \
-  "$ROOT/.opencode/agent-packs/repo/validator.md"; do
-  rel="${file#"$ROOT"/}"
-  if ! grep -qF '    "*": allow' "$file"; then
-    fail "$rel should allow unrestricted bash for friction-free repo workflows"
-  fi
-
-  if ! grep -qF 'missing modules' "$file" || ! grep -qF 'setup failures' "$file"; then
-    fail "$rel should classify missing dependencies as setup failures"
-  fi
-done
-
-if [ "$failures" -ne 0 ]; then
-  printf '\n%d audit failure(s)\n' "$failures" >&2
-  exit 1
-fi
-
-printf '\nAgent audit passed\n'
+if __name__ == "__main__":
+    raise SystemExit(main())

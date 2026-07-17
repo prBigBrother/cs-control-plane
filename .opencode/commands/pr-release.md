@@ -1,16 +1,7 @@
 ---
-description: Prepare an ops release PR from an app repo head.
+description: Prepare ops release PRs from app repository heads.
 ---
 
 Usage: `/pr-release <service[,service...]> [environment]`
 
-Run `./.opencode/bin/pr-release <service[,service...]> [environment]`.
-
-Rules:
-- Use the Release agent when available; otherwise keep the flow script-driven.
-- Operate through the `ops` worktree only.
-- Accept comma-separated services without spaces, for example `/pr-release daedalus,icarus production`.
-- Create one release PR per service.
-- Fail if `repos/ops` is dirty before creating the release worktree.
-- Preserve the generated environment-parameter check in the PR body.
-- Return the script Markdown summary directly.
+Use the Release agent when available, then run `./.opencode/bin/pr-release <services> [environment]`. Operate only through an `ops` worktree, one PR per comma-separated service. Stop if `repos/ops` is dirty. Preserve the generated environment-parameter gate and return the helper's compact Markdown with worktree, target SHA, changed values, commit, validation, and PR link.

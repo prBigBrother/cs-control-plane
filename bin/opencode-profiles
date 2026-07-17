@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Generate or verify standalone OpenCode profiles from one source."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "config" / "opencode-profiles.json"
+
+
+def rendered_profiles() -> dict[str, str]:
+    data = json.loads(SOURCE.read_text())
+    common = data["common"]
+    rendered: dict[str, str] = {}
+    for name, overrides in data["profiles"].items():
+        profile = copy.deepcopy(common)
+        profile.update(overrides)
+        rendered[name] = json.dumps(profile, indent=2) + "\n"
+    return rendered
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Generate standalone OpenCode profiles or check them for drift."
+    )
+    parser.add_argument("--check", action="store_true", help="fail if generated files differ")
+    parser.add_argument("--json", action="store_true", help="emit a machine-readable result")
+    args = parser.parse_args()
+
+    profiles = rendered_profiles()
+    drift = []
+    for name, expected in profiles.items():
+        target = ROOT / name
+        if not target.exists() or target.read_text() != expected:
+            drift.append(name)
+            if not args.check:
+                target.write_text(expected)
+
+    ok = not drift or not args.check
+    if args.json:
+        print(json.dumps({"ok": ok, "mode": "check" if args.check else "generate", "profiles": len(profiles), "drift": drift}))
+    elif args.check:
+        if drift:
+            print(f"opencode-profiles: drift: {', '.join(drift)}", file=sys.stderr)
+        else:
+            print(f"Profiles: {len(profiles)} in sync")
+    else:
+        action = "updated" if drift else "unchanged"
+        print(f"Profiles: {len(profiles)} {action}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

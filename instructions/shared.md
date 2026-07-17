@@ -7,7 +7,6 @@
 - When the user mentions an `ENG-<id>` task and the Linear issue details are not already present in the conversation, fetch that Linear issue before repo investigation, worktree setup, or implementation.
 - Treat repo hints such as "in odin" as routing hints only; use Linear as the task source of truth for title, description, acceptance criteria, labels, priority, status, links, and comments.
 - If Linear is unavailable or the issue cannot be found, state that blocker before falling back to repo-only investigation.
-- When output includes a URL, format it as a Markdown link (`[label](https://example.com)`) so it is clickable, unless the URL is inside a raw command output block or code block.
 - Use one editing agent per repo worktree. Do not let multiple agents edit the same repo at once.
 - Prefer stable scripts and tools under `bin/` and `.opencode/tools/` over ad hoc shell commands.
 - Run simple diagnostics as separate commands or through project helpers. Avoid chaining commands with `&&`, `;`, or pipes when separate commands keep permissions automatic and output clearer.
@@ -16,17 +15,15 @@
   - `engineering`: shared engineering rules only
   - `migration`: engineering plus migration rules
 
-## Agent Output Discipline
+## Output Discipline
 
-- Default to the shortest answer that preserves the decision, evidence, and next action.
-- Put the conclusion first, then include only the evidence needed to trust it.
-- Use at most three short headings in a final answer unless the user asks for a full report, audit, or plan.
-- Prefer one compact paragraph plus bullets only when listing concrete files, commands, findings, or next steps.
-- Omit sections that only restate the prompt, narrate process, or list expected negative findings.
-- Include "not found" findings only when they change the diagnosis, block the work, or contradict the user's assumption.
-- Collapse speculation into one ranked sentence when evidence is incomplete; do not list every possible cause.
-- Do not end with optional offers such as "If you want, I can..." unless the user explicitly asks for options.
-- For Datadog, Linear, GitHub, and command investigations, summarize the query or command scope and the actionable result; do not paste raw logs unless the raw line is the evidence.
+- Lead with the conclusion in a friendly, direct tone.
+- Include only evidence needed to trust it and the next required action. Use short bullets for files, commands, findings, or status.
+- Omit prompt restatement, process narration, routine negative findings, broad speculation, and raw logs. Quote a raw line only when it is essential evidence.
+- Keep failures short: state what failed, why it matters, and the exact repair or next command.
+- Use no more than three short headings unless a detailed report was requested.
+- End when the work is clear. Do not add praise, generic summaries, or optional filler such as “If you want…”.
+- Format URLs as descriptive Markdown links outside code blocks.
 
 ## Datadog Investigation
 

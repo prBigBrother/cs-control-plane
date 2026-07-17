@@ -98,6 +98,8 @@ Attach shared OpenCode config to a base repo or worktree:
 The default profile is `engineering`, which loads shared engineering instructions. The only optional profile is:
 - `migration`: engineering plus migration rules
 
+The four standalone `opencode*.json` profiles are generated from `config/opencode-profiles.json`. Run `./bin/opencode-profiles` after source changes; validation checks drift and the current OpenCode parser.
+
 Control-plane installs default to Manager. Repo and worktree installs default to Explorer so repo-local sessions start in read-only investigation mode. The built-in Build agent is disabled in all shared profiles.
 
 Linear and Datadog MCP servers are configured for per-agent use. Their tools are hidden globally and exposed through `linear-operator` and `datadog-investigator`. Authenticate once when needed:
@@ -226,10 +228,10 @@ Review a GitHub pull request:
 
 ```bash
 ./bin/pr-review collect https://github.com/owner/repo/pull/123
-./bin/pr-review submit https://github.com/owner/repo/pull/123 tmp/pr-review-owner-repo-123/findings.json
+./bin/pr-review submit --approved https://github.com/owner/repo/pull/123 tmp/pr-review-owner-repo-123/findings.json
 ```
 
-The shared `/pr-review <pr-url>` command wraps this flow, classifies findings as critical, medium, or light, and refuses to post comments or reviews on your own PRs.
+The shared `/pr-review <pr-url>` command wraps this flow, classifies findings as critical, medium, or light, and requires explicit approval before submission. It refuses to post comments or reviews on your own PRs.
 
 ## OpenCode Session Model
 

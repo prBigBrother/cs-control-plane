@@ -1,0 +1,8 @@
+{
+  "nodes": [
+    {"id": "example::service", "label": "Service", "repo": "example", "source_file": "src/service.ts"},
+    {"id": "other::service", "label": "Other", "repo": "other", "source_file": "src/other.ts"}
+  ],
+  "edges": [],
+  "hyperedges": []
+}

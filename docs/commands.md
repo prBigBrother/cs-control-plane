@@ -268,7 +268,7 @@ Usage:
 
 Typical output:
 - PR metadata
-- compact actionable review summary by default
+- compact recent feedback by default
 - full PR description, issue comments, and review comments only when requested
 
 ### `/pr-review`
@@ -306,6 +306,11 @@ Important behavior:
 - critical or medium findings produce a change-request review
 - only light findings, or no findings, produce an approval review
 - own PRs never receive comments, approvals, or change requests from the command
+- every quick review is presented as a draft and requires explicit user approval before posting
+
+### `/pr-review-deep`
+
+Use `/pr-review-deep <pr-url>` for complex or high-risk changes. It resolves the repository's existing `pr-review` skill, runs its specialist review flow, and presents a consolidated draft. Nothing is posted until the user explicitly approves it; repositories without the skill fall back to `/pr-review`.
 
 ### `/pr-create`
 

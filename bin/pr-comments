@@ -2,80 +2,74 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: pr-comments <repo> <pr-number>"
-  echo "  repo       format: owner/repo or just repo (assumes citizenshipper)"
-  echo "  pr-number  pull request number"
-  exit 1
+  cat <<'USAGE'
+Usage: pr-comments [--full|--raw] <repo> <pr-number>
+
+Print concise, recent PR feedback by default.
+  --full  include the complete description and comment bodies
+  --raw   emit one JSON object containing metadata and API responses
+Repo may be owner/repo or a Citizenshipper repo name.
+USAGE
 }
 
-[[ $# -ne 2 ]] && usage
+MODE=compact
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  --full) MODE=full; shift ;;
+  --raw) MODE=raw; shift ;;
+esac
+[ "$#" -eq 2 ] || { usage >&2; exit 2; }
+REPO_INPUT="$1"
+PR_NUMBER="$2"
+[[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "pr-comments: PR number must be numeric" >&2; exit 2; }
+REPO="$REPO_INPUT"
+[[ "$REPO" == */* ]] || REPO="citizenshipper/$REPO"
 
-REPO_INPUT=$1
-PR_NUMBER=$2
-
-if [[ "$REPO_INPUT" == */* ]]; then
-  REPO="$REPO_INPUT"
-else
-  REPO="citizenshipper/$REPO_INPUT"
-fi
-
-if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
-  usage
-fi
-
-for cmd in gh jq; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Missing required command: $cmd" >&2
-    exit 1
-  fi
+for command_name in gh jq; do
+  command -v "$command_name" >/dev/null 2>&1 || { echo "pr-comments: missing command: $command_name" >&2; exit 3; }
 done
+gh auth status >/dev/null 2>&1 || { echo "pr-comments: GitHub CLI is not authenticated; run: gh auth login" >&2; exit 4; }
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "GitHub CLI is not authenticated" >&2
-  exit 1
-fi
-
-echo "PR: $REPO#$PR_NUMBER"
-echo ""
-
-PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number,title,state,author,createdAt,body 2>/dev/null) || {
-  echo "Error: Could not fetch PR $REPO#$PR_NUMBER" >&2
-  exit 1
+PR_INFO="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number,title,state,author,createdAt,body,url 2>/dev/null)" || {
+  echo "pr-comments: could not fetch $REPO#$PR_NUMBER" >&2
+  exit 5
 }
+ISSUE_COMMENTS="$(gh api "/repos/$REPO/issues/$PR_NUMBER/comments" --paginate --slurp 2>/dev/null | jq 'flatten')"
+REVIEWS="$(gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp 2>/dev/null | jq 'flatten')"
+REVIEW_COMMENTS="$(gh api "/repos/$REPO/pulls/$PR_NUMBER/comments" --paginate --slurp 2>/dev/null | jq 'flatten')"
 
-echo "Title: $(echo "$PR_INFO" | jq -r '.title // "Unknown"')"
-echo "State: $(echo "$PR_INFO" | jq -r '.state // "unknown"')"
-echo "Author: $(echo "$PR_INFO" | jq -r '.author.login // "unknown"')"
-echo ""
-
-echo "=== PR Description ==="
-gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq '.body' 2>/dev/null | head -100 || echo "(no description)"
-echo ""
-
-echo "=== PR Comments ==="
-COMMENTS=$(gh api "/repos/$REPO/issues/$PR_NUMBER/comments" --paginate 2>/dev/null) || true
-if [[ -n "$COMMENTS" && "$COMMENTS" != "[]" ]]; then
-  echo "$COMMENTS" | jq -r '.[] | "[@\(.user.login)] \(.created_at | split("T")[0]):\n\(.body)\n---"'
-else
-  echo "(no PR comments)"
-fi
-echo ""
-
-echo "=== Review Comments / Threads ==="
-REVIEWS=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate 2>/dev/null) || true
-REVIEW_COMMENTS=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/comments" --paginate 2>/dev/null) || true
-
-if [[ -n "$REVIEWS" && "$REVIEWS" != "[]" ]]; then
-  echo "Reviews:"
-  echo "$REVIEWS" | jq -r '.[] | select(.body != "") | "[@\(.user.login) - \(.state)] \(.submitted_at | split("T")[0]):\n\(.body)\n---"' || true
+if [ "$MODE" = raw ]; then
+  jq -n --argjson pr "$PR_INFO" --argjson issue_comments "$ISSUE_COMMENTS" --argjson reviews "$REVIEWS" --argjson review_comments "$REVIEW_COMMENTS" \
+    '{pr:$pr,issue_comments:$issue_comments,reviews:$reviews,review_comments:$review_comments}'
+  exit 0
 fi
 
-if [[ -n "$REVIEW_COMMENTS" && "$REVIEW_COMMENTS" != "[]" ]]; then
-  echo ""
-  echo "Code Review Comments:"
-  echo "$REVIEW_COMMENTS" | jq -r '.[] | "[@\(.user.login) on \(.path):\(.line // "?")] \(.created_at | split("T")[0]):\n\(.body)\n---"'
-else
-  if [[ -z "$REVIEWS" || "$REVIEWS" == "[]" ]]; then
-    echo "(no review comments)"
+printf 'PR: %s#%s — %s (%s, @%s)\n' "$REPO" "$PR_NUMBER" "$(jq -r '.title' <<<"$PR_INFO")" "$(jq -r '.state | ascii_downcase' <<<"$PR_INFO")" "$(jq -r '.author.login // "unknown"' <<<"$PR_INFO")"
+printf 'Feedback: %s issue comment(s), %s review(s), %s inline comment(s)\n' \
+  "$(jq 'length' <<<"$ISSUE_COMMENTS")" "$(jq 'length' <<<"$REVIEWS")" "$(jq 'length' <<<"$REVIEW_COMMENTS")"
+
+if [ "$MODE" = full ]; then
+  printf '\nDescription:\n%s\n' "$(jq -r '.body // "(none)"' <<<"$PR_INFO")"
+  jq -r '.[] | "\n[@\(.user.login)] \(.created_at[0:10])\n\(.body)"' <<<"$ISSUE_COMMENTS"
+  jq -r '.[] | select((.body // "") != "") | "\n[@\(.user.login), \(.state)] \(.submitted_at[0:10])\n\(.body)"' <<<"$REVIEWS"
+  jq -r '.[] | "\n[@\(.user.login)] \(.path):\(.line // .original_line // "?")\n\(.body)"' <<<"$REVIEW_COMMENTS"
+  exit 0
+fi
+
+jq -rn --argjson issues "$ISSUE_COMMENTS" --argjson reviews "$REVIEWS" --argjson inline "$REVIEW_COMMENTS" '
+  def one_line: gsub("[\\r\\n]+"; " ") | gsub("  +"; " ") | .[0:360];
+  [
+    ($issues[-5:][]? | {date:.created_at, text:("@" + .user.login + ": " + (.body | one_line))}),
+    ($reviews[-5:][]? | select((.body // "") != "") | {date:.submitted_at, text:("@" + .user.login + " [" + .state + "]: " + (.body | one_line))}),
+    ($inline[-10:][]? | {date:.created_at, text:(.path + ":" + ((.line // .original_line // "?") | tostring) + " @" + .user.login + ": " + (.body | one_line))})
+  ] | sort_by(.date) | .[] | "- " + .text
+' | {
+  read -r first || true
+  if [ -n "${first:-}" ]; then
+    echo "Recent feedback:"
+    echo "$first"
+    cat
+  else
+    echo "Recent feedback: none"
   fi
-fi
+}

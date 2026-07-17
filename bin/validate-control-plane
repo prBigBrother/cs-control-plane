@@ -12,7 +12,14 @@ while IFS= read -r script; do
   fi
   bash -n "$script"
   printf '%s\n' "- ${script#"$ROOT"/}"
-done < <(find "$ROOT/bin" "$ROOT/lib" -maxdepth 1 -type f | sort)
+done < <(find "$ROOT/bin" "$ROOT/lib" "$ROOT/tests" -type f | sort)
+
+echo
+echo "Python syntax:"
+for script in "$ROOT/bin/agent-audit" "$ROOT/bin/opencode-profiles" "$ROOT/bin/session-brief"; do
+  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$script"
+  printf '%s\n' "- ${script#"$ROOT"/}"
+done
 
 echo
 echo "Command docs coverage:"
@@ -34,3 +41,11 @@ fi
 echo
 echo "Agent audit:"
 "$ROOT/bin/agent-audit"
+
+echo
+echo "OpenCode profiles:"
+"$ROOT/bin/validate-opencode-profiles"
+
+echo
+echo "CLI fixtures:"
+"$ROOT/tests/control-plane-cli.sh"

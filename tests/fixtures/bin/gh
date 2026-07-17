@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  auth) exit 0 ;;
+  pr)
+    if [ "${2:-}" = view ]; then
+      cat <<'JSON'
+{"number":7,"title":"Fixture PR","state":"OPEN","author":{"login":"author"},"createdAt":"2026-07-01T00:00:00Z","body":"Full fixture description that should not appear in compact mode.","url":"https://github.com/citizenshipper/example/pull/7"}
+JSON
+    elif [ "${2:-}" = list ]; then
+      printf '%s\n' 'https://github.com/citizenshipper/control-plane/pull/99'
+    fi
+    ;;
+  api)
+    case "${2:-}" in
+      */issues/*/comments)
+        printf '%s\n' '[{"user":{"login":"alice"},"created_at":"2026-07-02T00:00:00Z","body":"Please handle the timeout path."}]'
+        ;;
+      */pulls/*/reviews)
+        printf '%s\n' '[{"user":{"login":"bob"},"submitted_at":"2026-07-03T00:00:00Z","state":"CHANGES_REQUESTED","body":"One blocker remains."}]'
+        ;;
+      */pulls/*/comments)
+        printf '%s\n' '[{"user":{"login":"carol"},"created_at":"2026-07-04T00:00:00Z","path":"src/a.ts","line":9,"body":"This can return undefined."}]'
+        ;;
+      *) printf '%s\n' '[]' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac

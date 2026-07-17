@@ -1,0 +1,15 @@
+{
+  "repo": "citizenshipper/example",
+  "repo_slug": "example",
+  "number": 42,
+  "viewer": "reviewer",
+  "is_author": false,
+  "pr": {
+    "url": "https://github.com/citizenshipper/example/pull/42",
+    "title": "Fix checkout",
+    "state": "OPEN",
+    "additions": 12,
+    "deletions": 3,
+    "changedFiles": 2
+  }
+}

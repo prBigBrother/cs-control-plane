@@ -1,128 +1,183 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""Produce compact, deterministic context for one git worktree."""
 
-if [ "$#" -gt 1 ]; then
-  echo "Usage: session-brief [repo-or-worktree-path]" >&2
-  exit 1
-fi
+from __future__ import annotations
 
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TARGET_INPUT="${1:-.}"
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
 
-case "$TARGET_INPUT" in
-  /*) TARGET="$TARGET_INPUT" ;;
-  *)
-    if [ -d "$TARGET_INPUT" ]; then
-      TARGET="$(cd "$TARGET_INPUT" && pwd)"
-    else
-      TARGET="$ROOT/$TARGET_INPUT"
-    fi
-    ;;
-esac
+ROOT = Path(__file__).resolve().parent.parent
 
-if [ ! -d "$TARGET" ]; then
-  echo "Target directory not found: $TARGET" >&2
-  exit 2
-fi
 
-if ! git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Target is not a git worktree: $TARGET" >&2
-  exit 3
-fi
+def run(target: Path, *args: str) -> tuple[int, str]:
+    result = subprocess.run(
+        ["git", "-C", str(target), *args], text=True, capture_output=True, check=False
+    )
+    return result.returncode, result.stdout.strip()
 
-case "$TARGET" in
-  "$ROOT"/*) DISPLAY_PATH="${TARGET#"$ROOT"/}" ;;
-  "$ROOT") DISPLAY_PATH="." ;;
-  *) DISPLAY_PATH="$TARGET" ;;
-esac
 
-echo "Path: $DISPLAY_PATH"
-BRANCH="$(git -C "$TARGET" branch --show-current 2>/dev/null || true)"
-echo "Branch: $BRANCH"
-echo
-echo "Git status:"
-git -C "$TARGET" status --short
+def resolve_target(value: str) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = candidate if candidate.is_dir() else ROOT / candidate
+    return candidate.resolve()
 
-if git -C "$TARGET" rev-parse --verify origin/main >/dev/null 2>&1; then
-  echo
-  echo "Commits since origin/main:"
-  if git -C "$TARGET" log --oneline --max-count=8 origin/main..HEAD | grep -q .; then
-    git -C "$TARGET" log --oneline --max-count=8 origin/main..HEAD
-  else
-    echo "- none"
-  fi
 
-  echo
-  echo "Changed files since origin/main:"
-  if git -C "$TARGET" diff --name-only origin/main...HEAD | grep -q .; then
-    git -C "$TARGET" diff --name-only origin/main...HEAD | sed 's/^/- /'
-  else
-    echo "- none"
-  fi
-fi
+def package_info(target: Path, full: bool) -> dict:
+    package_file = target / "package.json"
+    result = {"present": package_file.is_file(), "validation_commands": [], "runtime": "not-applicable"}
+    if not package_file.is_file():
+        return result
+    try:
+        scripts = json.loads(package_file.read_text()).get("scripts", {})
+    except (OSError, json.JSONDecodeError) as error:
+        result["error"] = str(error)
+        return result
+    names = sorted(scripts)
+    result["validation_commands"] = [
+        f"npm run {name}" for name in names if name.split(":", 1)[0] in {"lint", "typecheck", "test", "build"}
+    ]
+    if full:
+        result["scripts"] = names
+    modules = target / "node_modules"
+    result["runtime"] = "linked" if modules.is_symlink() else "local" if modules.is_dir() else "missing"
+    return result
 
-if [ -f "$TARGET/package.json" ]; then
-  echo
-  echo "Package scripts:"
-  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); for (const name of Object.keys(p.scripts || {}).sort()) console.log(`- ${name}`)' "$TARGET/package.json"
 
-  echo
-  echo "Likely validation commands:"
-  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const names = Object.keys(p.scripts || {}).filter((name) => /^(lint|typecheck|test|build)(:|$)/.test(name)).sort(); if (!names.length) console.log("- none detected"); for (const name of names) console.log(`- npm run ${name}`)' "$TARGET/package.json"
+def open_pr(target: Path, branch: str) -> str | None:
+    if not branch:
+        return None
+    remote_code, remote = run(target, "remote", "get-url", "origin")
+    if remote_code:
+        return None
+    match = re.match(r"(?:git@github\.com:|https://github\.com/)([^/]+/[^/]+?)(?:\.git)?$", remote)
+    if not match or subprocess.run(["gh", "auth", "status"], capture_output=True, check=False).returncode:
+        return None
+    result = subprocess.run(
+        ["gh", "pr", "list", "--repo", match.group(1), "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url // \"\""],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result.stdout.strip() or None if result.returncode == 0 else None
 
-  echo
-  echo "Runtime links:"
-  if [ -L "$TARGET/node_modules" ]; then
-    echo "- node_modules: linked"
-  elif [ -d "$TARGET/node_modules" ]; then
-    echo "- node_modules: local directory"
-  else
-    echo "- node_modules: missing"
-  fi
-fi
 
-env_count=0
-for env_file in "$TARGET"/.env*; do
-  [ -e "$env_file" ] || [ -L "$env_file" ] || continue
-  env_count=$((env_count + 1))
-done
+def collect(target: Path, full: bool, include_pr: bool) -> dict:
+    code, inside = run(target, "rev-parse", "--is-inside-work-tree")
+    if code or inside != "true":
+        raise ValueError(f"not a git worktree: {target}")
 
-echo
-echo "Env files:"
-if [ "$env_count" -eq 0 ]; then
-  echo "- none"
-else
-  for env_file in "$TARGET"/.env*; do
-    [ -e "$env_file" ] || [ -L "$env_file" ] || continue
-    if [ -L "$env_file" ]; then
-      echo "- $(basename "$env_file"): linked"
-    else
-      echo "- $(basename "$env_file"): local"
-    fi
-  done
-fi
+    _, branch = run(target, "branch", "--show-current")
+    _, status_text = run(target, "status", "--short")
+    status = status_text.splitlines() if status_text else []
+    base_code, _ = run(target, "rev-parse", "--verify", "origin/main")
+    base_available = base_code == 0
+    changed: list[str] = []
+    commits: list[str] = []
+    ahead = 0
+    if base_available:
+        _, changed_text = run(target, "diff", "--name-only", "origin/main...HEAD")
+        changed = changed_text.splitlines() if changed_text else []
+        _, ahead_text = run(target, "rev-list", "--count", "origin/main..HEAD")
+        ahead = int(ahead_text or 0)
+        if full:
+            _, commit_text = run(target, "log", "--oneline", "--max-count=8", "origin/main..HEAD")
+            commits = commit_text.splitlines() if commit_text else []
 
-if command -v gh >/dev/null 2>&1 && [ -n "$BRANCH" ]; then
-  REMOTE_URL="$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)"
-  REPO_SLUG="$(printf '%s\n' "$REMOTE_URL" | sed -E 's#^git@github.com:##; s#^https://github.com/##; s#\.git$##')"
-  if [ -n "$REPO_SLUG" ] && [ "$REPO_SLUG" != "$REMOTE_URL" ] && gh auth status >/dev/null 2>&1; then
-    PR_URL="$(gh pr list --repo "$REPO_SLUG" --head "$BRANCH" --state open --json url --jq '.[0].url // ""' 2>/dev/null || true)"
-    echo
-    echo "Open PR:"
-    if [ -n "$PR_URL" ]; then
-      echo "- $PR_URL"
-    else
-      echo "- none"
-    fi
-  fi
-fi
+    env_files = []
+    for path in sorted(target.glob(".env*")):
+        if path.exists() or path.is_symlink():
+            env_files.append({"name": path.name, "kind": "linked" if path.is_symlink() else "local"})
 
-if [ -f "$TARGET/AGENTS.md" ]; then
-  echo
-  echo "Local AGENTS.md: present"
-  if grep -E '^#' "$TARGET/AGENTS.md" >/dev/null 2>&1; then
-    echo "AGENTS headings:"
-    grep -E '^#{1,3} ' "$TARGET/AGENTS.md" | head -8 | sed 's/^/- /'
-  fi
-fi
+    agents = target / "AGENTS.md"
+    data = {
+        "path": "." if target == ROOT else str(target.relative_to(ROOT)) if target.is_relative_to(ROOT) else str(target),
+        "absolute_path": str(target),
+        "branch": branch,
+        "git": {
+            "dirty": bool(status),
+            "status_count": len(status),
+            "status": status if full else status[:12],
+            "origin_main": base_available,
+            "ahead": ahead,
+            "changed_count": len(changed),
+            "changed_files": changed if full else changed[:20],
+        },
+        "package": package_info(target, full),
+        "environment": {"count": len(env_files), "files": env_files if full else []},
+        "agents_md": agents.is_file(),
+    }
+    if include_pr:
+        try:
+            data["open_pr"] = open_pr(target, branch)
+        except FileNotFoundError:
+            data["open_pr"] = None
+    if full:
+        data["git"]["commits"] = commits
+        if agents.is_file():
+            data["agents_headings"] = [
+                line.strip() for line in agents.read_text(errors="replace").splitlines() if line.startswith("#")
+            ][:8]
+    return data
+
+
+def print_compact(data: dict, full: bool) -> None:
+    git = data["git"]
+    print(f"Worktree: {data['path']}")
+    print(f"Branch: {data['branch'] or '(detached)'} | dirty={git['status_count']} | ahead={git['ahead']}")
+    if git["changed_files"]:
+        suffix = " …" if git["changed_count"] > len(git["changed_files"]) else ""
+        print("Changes: " + ", ".join(git["changed_files"]) + suffix)
+    else:
+        print("Changes: none")
+    commands = data["package"]["validation_commands"]
+    print("Validation: " + (", ".join(commands) if commands else "none detected"))
+    print(
+        f"Setup: node_modules={data['package']['runtime']} | env={data['environment']['count']} | AGENTS.md={'yes' if data['agents_md'] else 'no'}"
+    )
+    if full:
+        if git["status"]:
+            print("Status:")
+            for line in git["status"]:
+                print(f"- {line}")
+        if git.get("commits"):
+            print("Commits:")
+            for line in git["commits"]:
+                print(f"- {line}")
+        scripts = data["package"].get("scripts", [])
+        if scripts:
+            print("Package scripts: " + ", ".join(scripts))
+        files = data["environment"]["files"]
+        if files:
+            print("Env files: " + ", ".join(f"{item['name']} ({item['kind']})" for item in files))
+        print("Open PR: " + (data.get("open_pr") or "none"))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Return compact repo/worktree context for agent handoff.")
+    parser.add_argument("target", nargs="?", default=".", help="repo or worktree path (default: current directory)")
+    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument("--full", "--verbose", dest="full", action="store_true", help="include full status, scripts, commits, and env details")
+    args = parser.parse_args()
+    target = resolve_target(args.target)
+    if not target.is_dir():
+        print(f"session-brief: target not found: {target}", file=sys.stderr)
+        return 2
+    try:
+        data = collect(target, args.full, args.full or args.json)
+    except ValueError as error:
+        print(f"session-brief: {error}", file=sys.stderr)
+        return 3
+    if args.json:
+        print(json.dumps(data, separators=(",", ":") if not args.full else None, indent=2 if args.full else None))
+    else:
+        print_compact(data, args.full)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
