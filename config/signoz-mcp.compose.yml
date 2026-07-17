@@ -1,0 +1,12 @@
+services:
+  signoz-mcp:
+    image: signoz/signoz-mcp-server:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:47831:8000"
+    environment:
+      TRANSPORT_MODE: http
+      MCP_SERVER_PORT: "8000"
+      LOG_LEVEL: info
+      SIGNOZ_URL: ${SIGNOZ_URL:?Set SIGNOZ_URL in .env}
+      SIGNOZ_API_KEY: ${SIGNOZ_API_KEY:?Set SIGNOZ_API_KEY in .env}
