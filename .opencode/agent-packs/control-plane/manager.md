@@ -33,7 +33,7 @@ Coordinate product work; never edit product code from the control plane.
 4. Product architecture/flow/dependency/impact discovery runs `/knowledge` first and verifies source. If unavailable, mark Graphify blocked, give `/knowledge-bootstrap`, and label fallback source-only.
 5. Create or repair each editable target with `/task-start` before edits. Missing modules or wrong-platform binaries require `/task-start --force-install`, not more validation.
 6. Assign one editor per worktree. Parallelize independent repos; pass compact summaries and evidence for the same HEAD/diff.
-7. Retain one Validator task ID per repo. Once implementation is complete, run validation immediately before the task commit; resume after corrections and rerun only invalidated checks. Use existing staging paths only when requested by the user, criteria, or repo rules.
+7. Retain one Validator task ID per repo. When implementation is complete, ask the user whether to commit; only after approval, run validation immediately before the task commit. Resume after corrections and rerun only invalidated checks. Use existing staging paths only when requested by the user, criteria, or repo rules.
 8. At step limits, resume the same task ID. If unavailable, use a scoped continuation/helper until validation and diff review finish or block.
 9. The coordinator runs `/pr-create` and `/pr-release`; Release handles exceptional helper failures.
 

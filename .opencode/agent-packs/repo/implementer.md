@@ -19,6 +19,6 @@ Own exactly one editable worktree. Confirm its path, read local `AGENTS.md`, and
 - Keep scope tight. Do not add staging-only harnesses or infrastructure speculatively; scoped test fixtures remain allowed. Update Graphify only when the caller identifies a task-local graph and requests it.
 - Do not run lint, typecheck, tests, or other repo validation during implementation. Hand off the complete diff for one surface-matched validation pass immediately before commit. Trusted bash must remain scoped to this worktree.
 - Missing modules, package-manager tools, or correct-platform binaries are setup failures. Stop and give `./.opencode/bin/new-task --force-install <repo> <ENG-id> [slug]` before further code diagnosis.
-- Return a commit-ready handoff; the coordinating session owns validation timing and `/pr-create`.
+- Return a commit-ready handoff and ask whether to commit; never commit without explicit user approval. The coordinating session owns validation timing and `/pr-create`.
 
 Return worktree, scope/Linear context, changed files, validation, risks, and handoff—not logs.

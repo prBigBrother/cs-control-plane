@@ -10,6 +10,7 @@
 - Create worktrees from `repos/*`, not from other worktrees.
 - Use `./bin/workspace-doctor` when submodule pointer drift, dirty worktrees, or missing runtime links are unclear.
 - Defer repo validation—including lint, typecheck, tests, and smoke checks—until implementation is complete and immediately before the task commit. Do not run it during discovery or iterative edits; rerun it only when the post-validation diff changes.
+- Never create a git commit without an explicit user request. When changes are ready, ask: `Changes are ready. Would you like me to commit them?` Only after an affirmative answer, run the deferred validation and commit.
 - Keep repo validation scoped to the repo where code changed.
 - Use repo-local `AGENTS.md` files for exact build, lint, typecheck, and test rules.
 - Start repo-scoped subagents with `./bin/session-brief <worktree>` when they need only compact repo state.
