@@ -1,5 +1,5 @@
 ---
-description: Use to prepare ops release changes with deterministic release scripts.
+description: Use only to investigate exceptional ops release-helper failures.
 mode: subagent
 steps: 12
 temperature: 0.1
@@ -53,4 +53,4 @@ permission:
     "./.opencode/bin/release-pr-body*": allow
 ---
 
-Prepare releases only in an `ops` worktree; never edit app repos. Use full SHAs and the `compare`, `pr-release`, `new-release`, and `release-pr-body` helpers. Fail on dirty `repos/ops` unless inspection was requested. Preserve the environment-parameter gate and surface new parameters for values or Vault confirmation. Return service/environment, target SHA, worktree, changed values, validation, commit, PR, and risks.
+Investigate exceptional release-helper failures only in an `ops` worktree; never edit app repos. Start from the helper's failure and failed postcondition; do not rerun a mutating release helper unless the caller requests it after repair. Use full SHAs, preserve the environment-parameter gate, and do not repeat checks for the same code state. Return evidence, smallest repair, and exact helper command to rerun.

@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Dry-run-first randomizer for active Daedalus fee configurations."""
+
+import argparse
+import json
+import os
+import random
+import sys
+import urllib.error
+import urllib.request
+
+
+DEFAULT_API_URL = "https://daedalus.stage.citizenshipper.com"
+DEFAULT_THRESHOLDS = (0, 100, 250, 500)
+
+
+class CliError(Exception):
+    """An expected validation or API error safe to show to an operator."""
+
+
+def parse_thresholds(value):
+    try:
+        thresholds = tuple(int(part.strip()) for part in value.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("thresholds must be comma-separated integers") from exc
+    if not thresholds or any(threshold < 0 for threshold in thresholds):
+        raise argparse.ArgumentTypeError("thresholds must contain one or more non-negative integers")
+    if any(left >= right for left, right in zip(thresholds, thresholds[1:])):
+        raise argparse.ArgumentTypeError("thresholds must be strictly ascending")
+    return thresholds
+
+
+def parse_fee(value):
+    try:
+        fee = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("fee must be a non-negative number with at most two decimal places") from exc
+    cents = round(fee * 100)
+    if fee < 0 or abs(fee * 100 - cents) > 0.000001:
+        raise argparse.ArgumentTypeError("fee must be a non-negative number with at most two decimal places")
+    return cents
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="randomize-fee-configs",
+        description="Randomize rules for active Daedalus fee configs; dry-run by default.",
+    )
+    parser.add_argument("--apply", action="store_true", help="send PATCH requests (otherwise only show proposals)")
+    parser.add_argument("--seed", type=int, help="seed for repeatable rule generation")
+    parser.add_argument(
+        "--thresholds",
+        type=parse_thresholds,
+        default=DEFAULT_THRESHOLDS,
+        metavar="MILES",
+        help="strictly ascending comma-separated mileage thresholds (default: 0,100,250,500)",
+    )
+    parser.add_argument("--min-fee", type=parse_fee, default=0, metavar="AMOUNT", help="minimum fee (default: 0)")
+    parser.add_argument("--max-fee", type=parse_fee, default=50000, metavar="AMOUNT", help="maximum fee (default: 500)")
+    args = parser.parse_args(argv)
+    if args.min_fee > args.max_fee:
+        parser.error("--min-fee cannot exceed --max-fee")
+    return args
+
+
+def fee_amount(cents):
+    return cents // 100 if cents % 100 == 0 else cents / 100
+
+
+def multiset_count(values, rules):
+    """Return combinations with repetition: C(values + rules - 1, rules)."""
+    result = 1
+    for index in range(1, rules + 1):
+        result = result * (values + index - 1) // index
+    return result
+
+
+def random_rules(rng, thresholds, minimum, maximum):
+    fees = sorted(rng.randint(minimum, maximum) for _ in thresholds)
+    return [[threshold, fee_amount(fee)] for threshold, fee in zip(thresholds, fees)]
+
+
+def rule_key(rules):
+    return tuple((threshold, fee) for threshold, fee in rules)
+
+
+def build_proposals(configs, rng, thresholds, minimum, maximum):
+    capacity = multiset_count(maximum - minimum + 1, len(thresholds))
+    if len(configs) > capacity:
+        raise CliError(
+            "cannot create unique rule sets for "
+            f"{len(configs)} active configs: the selected fee range and thresholds allow only {capacity}"
+        )
+
+    seen = set()
+    proposals = []
+    for config in configs:
+        for _ in range(10000):
+            rules = random_rules(rng, thresholds, minimum, maximum)
+            if rule_key(rules) not in seen:
+                seen.add(rule_key(rules))
+                proposals.append((config, rules))
+                break
+        else:
+            raise CliError("could not generate a unique rule set; widen --min-fee/--max-fee")
+    return proposals
+
+
+def api_request(base_url, method, path, headers, body=None):
+    request = urllib.request.Request(
+        base_url.rstrip("/") + path,
+        data=None if body is None else json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        raise CliError(f"{method} {path} failed with HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise CliError(f"{method} {path} failed: {exc.reason}") from exc
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise CliError(f"{method} {path} returned invalid JSON") from exc
+
+
+def auth_headers():
+    cookie = os.environ.get("DAEDALUS_ADMIN_COOKIE")
+    token = os.environ.get("DAEDALUS_ADMIN_TOKEN")
+    if cookie:
+        return {"Accept": "application/json", "Cookie": cookie}
+    if token:
+        return {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+    raise CliError("set DAEDALUS_ADMIN_COOKIE or DAEDALUS_ADMIN_TOKEN")
+
+
+def config_scope(config):
+    return {
+        "categoryId": config.get("categoryId"),
+        "subcategoryId": config.get("subcategoryId"),
+        "isDefault": config.get("isDefault"),
+    }
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    headers = auth_headers()
+    base_url = os.environ.get("DAEDALUS_ADMIN_API_URL", DEFAULT_API_URL)
+    response = api_request(base_url, "GET", "/api/admin/fee-configs", headers)
+    configs = response.get("feeConfigs")
+    if not isinstance(configs, list):
+        raise CliError("GET /api/admin/fee-configs response did not contain feeConfigs")
+    active = [config for config in configs if isinstance(config, dict) and config.get("status") == "active"]
+    proposals = build_proposals(active, random.Random(args.seed), args.thresholds, args.min_fee, args.max_fee)
+
+    print("Applying proposals:" if args.apply else "Dry run: no changes will be made.")
+    for config, rules in proposals:
+        config_id = config.get("id")
+        if not isinstance(config_id, str) or not config_id:
+            raise CliError("an active fee config has no valid id")
+        print(json.dumps({"id": config_id, "basedOn": config.get("basedOn"), "scope": config_scope(config), "rules": rules}))
+
+    if not args.apply:
+        return
+    for config, rules in proposals:
+        try:
+            api_request(base_url, "PATCH", f"/api/admin/fee-configs/{config['id']}", {**headers, "Content-Type": "application/json"}, {"rules": rules})
+        except CliError as exc:
+            raise CliError(f"{exc}; prior PATCH requests may already have been applied") from exc
+    print(f"Applied {len(proposals)} fee config rule updates. Updates are not atomic.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (CliError, ValueError) as exc:
+        print(f"randomize-fee-configs: {exc}", file=sys.stderr)
+        sys.exit(1)

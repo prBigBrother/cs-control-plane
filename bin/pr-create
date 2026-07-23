@@ -256,6 +256,15 @@ for (const name of ["lint", "typecheck"]) {
 
 run_pr_validation
 
+print_validation_result() {
+  echo "Validation:"
+  if [ "${#VALIDATION_LINES[@]}" -eq 0 ]; then
+    echo "- [ ] No automatic validation recorded"
+  else
+    printf '%s\n' "${VALIDATION_LINES[@]}"
+  fi
+}
+
 LATEST_SUBJECT="$(git -C "$TARGET_PATH" log -1 --pretty=%s)"
 TITLE_DETAIL="$(printf '%s\n' "$LATEST_SUBJECT" | sed -E "s/^$TASK_ID[ :_-]+//")"
 
@@ -354,6 +363,7 @@ if [ -n "$EXISTING_PR_URL" ]; then
   echo "Branch: $BRANCH"
   echo "Repository: $REPO_SLUG"
   echo "Title: $PR_TITLE"
+  print_validation_result
   echo "PR URL: $EXISTING_PR_URL"
   exit 0
 fi
@@ -371,4 +381,5 @@ echo "Branch: $BRANCH"
 echo "Repository: $REPO_SLUG"
 echo "Mode: $MODE"
 echo "Title: $PR_TITLE"
+print_validation_result
 echo "PR URL: $PR_URL"

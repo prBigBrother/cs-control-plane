@@ -221,6 +221,8 @@ release_prepare_service() {
   fi
   rm -f "$body_file"
 
+  release_verify_postconditions "$RELEASE_WORKTREE_PATH" "$RELEASE_BRANCH" "$commit_sha" "$pr_url" "$pr_title" "$expected_files" "$target_sha"
+
   echo "## Release PR"
   echo
   echo "- Service: \`$service\`"
@@ -230,6 +232,7 @@ release_prepare_service() {
   echo "- Target SHA: \`$target_sha\`"
   echo "- Commit SHA: \`$commit_sha\`"
   echo "- PR: $pr_url"
+  echo "- Validation: passed (values, clean worktree, remote branch, PR head, title, and files)"
   echo
   echo "## Changed Files"
   echo

@@ -216,6 +216,26 @@ Validate control-plane scripts and command docs:
 ./bin/validate-control-plane
 ```
 
+## Daedalus Fee-Config Randomizer
+
+`bin/randomize-fee-configs` creates independent, non-decreasing fee rules for every active fee config returned by Daedalus. It only PATCHes each config's `rules`; the existing basis and scope are displayed but never sent in the update. It excludes non-active configs, including experiment variants omitted by the API list.
+
+Authenticate with a raw Cookie header value (preferred) or a Bearer token. The command never prints either credential. The stage API is the default; override it for another environment when needed.
+
+```bash
+export DAEDALUS_ADMIN_COOKIE='session=...'
+# Or: export DAEDALUS_ADMIN_TOKEN='...'
+export DAEDALUS_ADMIN_API_URL='https://daedalus.stage.citizenshipper.com' # optional
+
+# Dry run (default): inspect IDs, basis, scope, and generated rules.
+./bin/randomize-fee-configs --seed 42
+
+# Apply generated rules after reviewing a dry run.
+./bin/randomize-fee-configs --apply --seed 42 --thresholds 0,100,250,500 --min-fee 25 --max-fee 400
+```
+
+Thresholds must be strictly ascending non-negative mileage values. Fees are generated in cents within the inclusive `--min-fee`/`--max-fee` range and are non-decreasing as mileage rises. The command prevents duplicate generated rule sets when the selected value space can accommodate all active configs; it exits with an error otherwise. PATCH requests run sequentially and are not atomic.
+
 Create an app repo PR from a committed worktree branch:
 
 ```bash

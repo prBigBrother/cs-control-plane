@@ -131,9 +131,15 @@ def audit() -> tuple[dict, list[str]]:
             failures.append(f"{name}: tool_output limits missing")
 
     required_text = {
-        ".opencode/agent-packs/control-plane/manager.md": ["/task-start --force-install", "step limit", "Completion Gate:", '"implementer": allow'],
-        ".opencode/agent-packs/repo/implementer.md": ["setup failures", '"*": allow'],
-        ".opencode/agent-packs/repo/validator.md": ["setup failures", '"*": allow'],
+        ".opencode/agent-packs/control-plane/manager.md": [
+            "/task-start --force-install", "step limit", "Completion Gate:", '"implementer": allow',
+            "Separate discovery from editable targets", "fallback source-only", "Retain one Validator task ID",
+            "Every `done` needs evidence", "coordinator runs `/pr-create` and `/pr-release`",
+        ],
+        ".opencode/agent-packs/control-plane/release.md": ["exceptional release-helper failures", "do not rerun a mutating release helper"],
+        ".opencode/agent-packs/repo/explorer.md": ["report Graphify blocked", "source-only discovery"],
+        ".opencode/agent-packs/repo/implementer.md": ["setup failures", '"*": allow', "staging-only harnesses", "task-local graph"],
+        ".opencode/agent-packs/repo/validator.md": ["setup failures", '"*": allow', "same HEAD", "Do not invent staging infrastructure"],
         ".opencode/agent-packs/common/linear-operator.md": ["linear_*: allow"],
         ".opencode/agent-packs/common/datadog-investigator.md": ["datadog_*: allow"],
     }
@@ -147,6 +153,28 @@ def audit() -> tuple[dict, list[str]]:
     for needle in ("present that draft", "without explicit user approval"):
         if needle not in quick_review:
             failures.append(f".opencode/commands/pr-review.md: missing approval gate: {needle}")
+
+    command_policies = {
+        ".opencode/commands/knowledge.md": ["Report `Graphify: queried|blocked`", "source-only fallback"],
+        ".opencode/commands/pr-release.md": ["Run `./.opencode/bin/pr-release", "Use Release only to investigate"],
+        ".opencode/commands/cross-impl.md": ["read-only discovery dependencies", "Validator task ID"],
+    }
+    for rel, needles in command_policies.items():
+        text = (ROOT / rel).read_text()
+        for needle in needles:
+            if needle not in text:
+                failures.append(f"{rel}: missing required policy: {needle}")
+
+    helper_policies = {
+        "bin/pr-release": ["release_verify_postconditions", "Validation: passed"],
+        "bin/pr-create": ["print_validation_result"],
+        "lib/release-common.sh": ["release_verify_postconditions()", "PR head does not match", "PR files do not match"],
+    }
+    for rel, needles in helper_policies.items():
+        text = (ROOT / rel).read_text()
+        for needle in needles:
+            if needle not in text:
+                failures.append(f"{rel}: missing required helper postcondition: {needle}")
 
     metrics = {
         "ok": not failures,

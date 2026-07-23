@@ -286,15 +286,15 @@ release_append_env_report_for_environment() {
         else
           has_missing=1
           if [ -n "$vault_path" ]; then
-            printf '| `%s` | Not present in ops `configMap`; Vault is extracted from `%s` | Provide the non-secret value to add to ops, or confirm/add the secret in Vault before merge. |\n' "$env_name" "$vault_path"
+            printf '| `%s` | Not present in ops `configMap`; Vault is extracted from `%s` | Add the non-secret value to `%s`, or confirm/add the secret in Vault before merge. |\n' "$env_name" "$vault_path" "$(release_values_relpath "$service" "$environment")"
           else
-            printf '| `%s` | Not present in ops `configMap`; no Vault path detected | Provide the value and where it should be populated before merge. |\n' "$env_name"
+            printf '| `%s` | Not present in ops `configMap`; no Vault path detected | Add the value to `%s` before merge. |\n' "$env_name" "$(release_values_relpath "$service" "$environment")"
           fi
         fi
       done <"$env_file"
       if [ "$has_missing" -ne 0 ]; then
         echo ""
-        echo "**Release question:** Which of the new parameters above should be populated in ops values, and which have already been added through the secret vault? Provide the required values or Vault confirmation before merging."
+        echo "**Release question:** Update the ops values YAML for non-secret parameters and confirm any Vault additions before merging."
       fi
     fi
   } >>"$target_file"
@@ -347,6 +347,67 @@ release_changed_files() {
       printf '%s\n' "$(release_values_relpath "$service" staging)" "$(release_values_relpath "$service" production)"
       ;;
   esac
+}
+
+release_verify_postconditions() {
+  local worktree_path=$1
+  local branch=$2
+  local commit_sha=$3
+  local pr_url=$4
+  local pr_title=$5
+  local expected_files=$6
+  local target_sha=$7
+  local relpath
+  local deployed_tag
+  local remote_sha
+  local actual_pr_url
+  local actual_pr_title
+  local actual_pr_branch
+  local actual_pr_sha
+  local actual_pr_files
+
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    if [ ! -f "$worktree_path/$relpath" ]; then
+      echo "Error: release postcondition missing values file: $relpath" >&2
+      return 1
+    fi
+    deployed_tag=$(release_extract_tag_from_stream <"$worktree_path/$relpath" || true)
+    if [ "$deployed_tag" != "$target_sha" ]; then
+      echo "Error: release postcondition tag mismatch in $relpath" >&2
+      return 1
+    fi
+  done < <(printf '%s\n' "$expected_files")
+
+  if [ -n "$(git -C "$worktree_path" status --porcelain)" ]; then
+    echo "Error: release postcondition found a dirty worktree" >&2
+    return 1
+  fi
+
+  remote_sha=$(git -C "$worktree_path" ls-remote origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')
+  if [ "$remote_sha" != "$commit_sha" ]; then
+    echo "Error: release postcondition remote branch does not match the release commit" >&2
+    return 1
+  fi
+
+  actual_pr_url=$(gh pr view "$pr_url" --repo citizenshipper/ops --json url --jq '.url')
+  actual_pr_title=$(gh pr view "$pr_url" --repo citizenshipper/ops --json title --jq '.title')
+  actual_pr_branch=$(gh pr view "$pr_url" --repo citizenshipper/ops --json headRefName --jq '.headRefName')
+  actual_pr_sha=$(gh pr view "$pr_url" --repo citizenshipper/ops --json headRefOid --jq '.headRefOid')
+  actual_pr_files=$(gh pr view "$pr_url" --repo citizenshipper/ops --json files --jq '.files[].path' | sort)
+
+  if [ "$actual_pr_url" != "$pr_url" ] || [ "$actual_pr_title" != "$pr_title" ]; then
+    echo "Error: release postcondition PR identity does not match" >&2
+    return 1
+  fi
+  if [ "$actual_pr_branch" != "$branch" ] || [ "$actual_pr_sha" != "$commit_sha" ]; then
+    echo "Error: release postcondition PR head does not match the release commit" >&2
+    return 1
+  fi
+  if [ "$actual_pr_files" != "$expected_files" ]; then
+    echo "Error: release postcondition PR files do not match the intended release file set" >&2
+    return 1
+  fi
 }
 
 release_short_description() {

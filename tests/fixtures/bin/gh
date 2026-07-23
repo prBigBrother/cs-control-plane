@@ -5,9 +5,29 @@ case "${1:-}" in
   auth) exit 0 ;;
   pr)
     if [ "${2:-}" = view ]; then
-      cat <<'JSON'
+      if [ "${GH_RELEASE_FIXTURE:-}" = "1" ]; then
+        json_field=""
+        previous=""
+        for argument in "$@"; do
+          if [ "$previous" = "--json" ]; then
+            json_field="$argument"
+            break
+          fi
+          previous="$argument"
+        done
+        case "$json_field" in
+          url) printf '%s\n' "$GH_RELEASE_PR_URL" ;;
+          title) printf '%s\n' "$GH_RELEASE_PR_TITLE" ;;
+          headRefName) printf '%s\n' "$GH_RELEASE_PR_BRANCH" ;;
+          headRefOid) printf '%s\n' "$GH_RELEASE_PR_SHA" ;;
+          files) printf '%s\n' "$GH_RELEASE_PR_FILES" ;;
+          *) exit 1 ;;
+        esac
+      else
+        cat <<'JSON'
 {"number":7,"title":"Fixture PR","state":"OPEN","author":{"login":"author"},"createdAt":"2026-07-01T00:00:00Z","body":"Full fixture description that should not appear in compact mode.","url":"https://github.com/citizenshipper/example/pull/7"}
 JSON
+      fi
     elif [ "${2:-}" = list ]; then
       printf '%s\n' 'https://github.com/citizenshipper/control-plane/pull/99'
     fi
