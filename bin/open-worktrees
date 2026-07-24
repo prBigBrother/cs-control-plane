@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: open-worktrees
+
+Interactively select one or more current worktrees and open each in a separate
+instance of the configured editor. Press Space to toggle a worktree, then Enter
+to open the selection.
+
+The editor is resolved from $VISUAL, then $EDITOR, then `code --new-window`.
+Requires fzf (install with `brew install fzf`).
+EOF
+}
+
+case "${1:-}" in
+  "")
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "open-worktrees: unknown option: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+if ! command -v fzf >/dev/null 2>&1; then
+  echo "open-worktrees: fzf is required; install it with: brew install fzf" >&2
+  exit 127
+fi
+
+editor="${VISUAL:-${EDITOR:-code --new-window}}"
+read -r -a editor_command <<<"$editor"
+if ! command -v "${editor_command[0]}" >/dev/null 2>&1; then
+  echo "open-worktrees: editor not found: ${editor_command[0]}" >&2
+  echo "Set VISUAL or EDITOR to an editor command, for example: export EDITOR=code" >&2
+  exit 127
+fi
+
+worktrees="$(mktemp "${TMPDIR:-/tmp}/open-worktrees.worktrees.XXXXXX")"
+selection="$(mktemp "${TMPDIR:-/tmp}/open-worktrees.XXXXXX")"
+trap 'rm -f "$worktrees" "$selection"' EXIT
+
+while IFS= read -r git_file; do
+  worktree_path="$(dirname "$git_file")"
+  repo="$(basename "$(dirname "$worktree_path")")"
+  name="$(basename "$worktree_path")"
+  printf '%s\t%s/%s\t%s\n' "$name" "$repo" "$name" "$worktree_path"
+done < <(find "$ROOT/worktrees" -mindepth 3 -maxdepth 3 -name .git -type f 2>/dev/null) | sort -t $'\t' -k1,1 >"$worktrees"
+
+if [ ! -s "$worktrees" ]; then
+  echo "open-worktrees: no current worktrees found under worktrees/." >&2
+  exit 1
+fi
+
+fzf --multi --bind='space:toggle' --prompt='Worktrees > ' --header='Space: toggle  Enter: open selected' --delimiter=$'\t' --with-nth=2 <"$worktrees" >"$selection" || true
+
+if [ ! -s "$selection" ]; then
+  exit 0
+fi
+
+while IFS=$'\t' read -r _ _ worktree_path; do
+  "${editor_command[@]}" "$worktree_path"
+done <"$selection"
