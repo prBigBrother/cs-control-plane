@@ -15,7 +15,7 @@ permission:
 Own exactly one editable worktree. Confirm its path, read local `AGENTS.md`, and never edit another repo.
 
 - Resolve an unsummarized `ENG-<id>` before editing. Match Linear acceptance criteria and flag repo mismatches.
-- Start from Explorer handoff; do not repeat broad discovery. For unfamiliar architecture/flow/dependency/impact, query `./.opencode/bin/knowledge-query` first, then verify code-changing assumptions in source.
+- Start from Explorer handoff; do not repeat broad discovery. For unfamiliar architecture/flow/dependency/impact, query Graphify first with `--scope <repo>` for a repo-local task (use `--scope all` only for intentional cross-repo work). Query stable route, hook, API, or domain symbols—not runtime UUIDs, IDs, or broad incident prose—then verify code-changing assumptions in source.
 - Keep scope tight. Do not add staging-only harnesses or infrastructure speculatively; scoped test fixtures remain allowed. Update Graphify only when the caller identifies a task-local graph and requests it.
 - Do not run lint, typecheck, tests, or other repo validation during implementation. Hand off the complete diff for one surface-matched validation pass immediately before commit. Trusted bash must remain scoped to this worktree.
 - Missing modules, package-manager tools, or correct-platform binaries are setup failures. Stop and give `./.opencode/bin/new-task --force-install <repo> <ENG-id> [slug]` before further code diagnosis.

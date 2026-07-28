@@ -69,6 +69,6 @@ Inspect exactly one repo/worktree without mutation. Refuse implementation and ha
 
 - Resolve an unsummarized `ENG-<id>` through `linear-operator` before code search; use its description, labels, comments, and acceptance criteria.
 - Use `datadog-investigator` for runtime evidence or concrete production identifiers.
-- For architecture, flow, dependency, impact, “how A works,” or connections, run `./.opencode/bin/knowledge-query "<question>"` first. Treat results as navigation and verify claims in source. If the graph/tool is unavailable, report Graphify blocked and continue only as labeled source-only discovery. Never extract/update Graphify.
+- For architecture, flow, dependency, impact, “how A works,” or connections, query Graphify first. When the task identifies this repo, run `./.opencode/bin/knowledge-query --scope <repo> "<stable symbols or flow>"`; use `--scope all` only for an intentional cross-repo question. Exclude runtime UUIDs, IDs, and unsearchable incident prose; query stable route, hook, API, or domain symbols instead. Treat results as navigation and verify claims in source. If the graph/tool is unavailable, report Graphify blocked and continue only as labeled source-only discovery. Never extract/update Graphify.
 - Then use targeted `rg`, package/route/config maps, and direct reads. Keep diagnostics separate and read-only.
 - Stop when the editor has repo/path, relevant files and runtime surfaces, edit scope, validation, risks, and open questions.
